@@ -10,7 +10,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Такт">
-  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 40 40%22%3E%3Ccircle cx=%2220%22 cy=%2220%22 r=%2218%22 fill=%22%23101111%22 stroke=%22%23e75248%22 stroke-width=%222%22/%3E%3Cpath d=%22M20 9v22%22 stroke=%22%23e75248%22/%3E%3C/svg%3E">
   <title>Такт — RSVP-читалка</title>
   <style>
@@ -29,11 +29,6 @@
       --r-s: 8px; --r-m: 12px; --r-l: 18px;
       --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px; --s-5: 24px; --s-6: 32px;
     }
-    body.theme-dark {
-      --bg: #101111; --panel: #171918; --panel-raised: #1d201f;
-      --line: #303433; --text: #f1f0eb; --muted: #929994; --subtle: #68706b;
-      --green: #b8c6ad; --overlay: rgba(0,0,0,.55);
-    }
     body.theme-sepia {
       --bg: #efe6d0; --panel: #e6dcc3; --panel-raised: #ddd1b4;
       --line: #b5a77f; --text: #3a2d1a; --muted: #6b5839; --subtle: #7d6a47;
@@ -47,7 +42,7 @@
     * { box-sizing: border-box; }
     html { min-width: 320px; min-height: 100%; background: var(--bg); transition: background .3s ease; }
     body {
-      margin: 0; min-height: 100dvh; background: var(--bg); color: var(--text);
+      margin: 0; min-height: 100vh; min-height: 100dvh; background: var(--bg); color: var(--text);
       font-family: var(--sans); -webkit-font-smoothing: antialiased; letter-spacing: .01em;
       transition: background .3s ease, color .3s ease;
     }
@@ -69,9 +64,10 @@
     .drop-box-title { font-family: var(--serif); font-size: 24px; margin-bottom: 8px; }
     .drop-box-sub { font-size: 13px; color: var(--muted); }
 
-    .shell { width: min(100% - 40px, 980px); margin: 0 auto; min-height: 100dvh; display: flex; flex-direction: column; }
+    .shell { width: min(100% - 40px, 980px); margin: 0 auto; min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; }
     .topbar {
-      height: 72px; display: flex; justify-content: space-between; align-items: center;
+      height: calc(72px + env(safe-area-inset-top, 0px)); padding-top: env(safe-area-inset-top, 0px);
+      display: flex; justify-content: space-between; align-items: center;
       border-bottom: 1px solid var(--line); flex: 0 0 auto;
     }
     .brand { display: flex; align-items: center; gap: 12px; }
@@ -83,7 +79,7 @@
     .top-actions { display: flex; gap: var(--s-2); }
     .icon-button, .quiet-button {
       background: transparent; border: 1px solid var(--line); border-radius: var(--r-s); color: var(--text);
-      min-height: 40px; width: 40px; padding: 0; cursor: pointer;
+      min-height: 44px; width: 44px; padding: 0; cursor: pointer;
       display: inline-flex; align-items: center; justify-content: center;
       transition: background .2s, border-color .2s, color .2s, transform .15s;
     }
@@ -119,8 +115,8 @@
       opacity: 1; transition: opacity .12s ease-out, transform .12s ease-out;
     }
     .word-stage.fade-out { opacity: 0; transform: translateY(2px); }
-    .word-bionic { font-weight: 700; white-space: pre; }
-    .word-before { justify-self: end; text-align: right; white-space: pre; }
+    .word-left { justify-self: end; text-align: right; white-space: pre; }
+    .word-bionic { font-weight: 700; }
     .word-pivot { color: var(--accent); transition: color .3s ease; }
     .word-after { justify-self: start; text-align: left; white-space: pre; }
     .word-stage.is-empty { display: flex; justify-content: center; text-align: center; }
@@ -227,7 +223,7 @@
       transform: translateY(100%); transition: transform .32s cubic-bezier(.2,.8,.3,1);
       max-width: 640px; margin: 0 auto;
       height: min(85dvh, 720px);
-      overflow-y: scroll;
+      overflow-y: auto;
       overscroll-behavior: contain;
       box-shadow: 0 -20px 60px rgba(0,0,0,.25);
     }
@@ -238,7 +234,7 @@
     .sheet-title { font-family: var(--serif); font-size: 20px; font-weight: 500; }
     .sheet-close {
       background: var(--panel-raised); border: 1px solid var(--line); color: var(--muted);
-      width: 32px; height: 32px; border-radius: var(--r-s); cursor: pointer;
+      width: 44px; height: 44px; border-radius: var(--r-s); cursor: pointer;
       display: inline-flex; align-items: center; justify-content: center; transition: color .2s, background .2s;
     }
     .sheet-close:hover { color: var(--text); background: var(--bg); }
@@ -254,31 +250,52 @@
     .sheet-row-label small { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; }
     .sheet-value { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; min-width: 42px; text-align: right; }
     .sheet-slider { width: 100%; height: 28px; accent-color: var(--accent); cursor: pointer; margin: 4px 0 0; }
+    .dynamic-toggle { position: relative; display: inline-flex; align-items: center; cursor: pointer; min-height: 44px; flex: 0 0 auto; }
+    .dynamic-toggle input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; z-index: 1; }
+    .dynamic-switch { pointer-events: none; }
+    .dynamic-switch {
+      width: 46px; height: 26px; border-radius: 13px; background: var(--line);
+      position: relative; transition: background .2s ease; flex: 0 0 auto;
+    }
+    .dynamic-switch::after {
+      content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px;
+      border-radius: 50%; background: var(--text); transition: transform .2s ease;
+    }
+    .dynamic-toggle input:checked + .dynamic-switch { background: var(--accent); }
+    .dynamic-toggle input:checked + .dynamic-switch::after { transform: translateX(20px); background: #fff; }
+    .dynamic-toggle input:focus-visible + .dynamic-switch { outline: 2px solid var(--accent); outline-offset: 3px; }
+    .zen-exit {
+      display: none; position: fixed; z-index: 80;
+      top: max(16px, env(safe-area-inset-top, 0px)); right: 16px;
+      background: var(--panel); opacity: .85;
+    }
+    .zen-exit:hover { opacity: 1; }
+    .shell.is-zen .zen-exit { display: inline-flex; }
     .segmented { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s-1); background: var(--panel-raised); border: 1px solid var(--line); border-radius: var(--r-s); padding: var(--s-1); }
     .segmented button { background: transparent; border: 0; color: var(--muted); padding: 10px 8px; border-radius: var(--r-s); cursor: pointer; font-size: 13px; transition: background .18s, color .18s; }
     .segmented button:hover { color: var(--text); }
-    .segmented button[aria-pressed="true"] { background: var(--bg); color: var(--accent); box-shadow: 0 1px 3px rgba(0,0,0,.15); }
+    .segmented button[aria-checked="true"] { background: var(--bg); color: var(--accent); box-shadow: 0 1px 3px rgba(0,0,0,.15); }
     .segmented.fonts button.font-sans { font-family: var(--sans); }
     .segmented.fonts button.font-serif { font-family: var(--serif); }
     .segmented.fonts button.font-mono { font-family: var(--mono); font-size: 12px; }
 
     .chunk-options { display: inline-flex; gap: var(--s-1); }
     .chunk-button {
-      width: 32px; height: 32px; padding: 0; border: 1px solid var(--line); border-radius: var(--r-s);
+      width: 44px; height: 44px; padding: 0; border: 1px solid var(--line); border-radius: var(--r-s);
       background: transparent; color: var(--muted); font-size: 13px; cursor: pointer;
       transition: background .18s, border-color .18s, color .18s;
     }
     .chunk-button:hover { border-color: var(--subtle); color: var(--text); }
-    .chunk-button[aria-pressed="true"] {
+    .chunk-button[aria-checked="true"] {
       border-color: var(--accent); color: var(--accent); background: var(--accent-soft);
       font-weight: 600;
     }
 
     .bookmark-list { display: flex; flex-direction: column; gap: var(--s-2); }
     .bookmark-item {
-      display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+      display: flex; align-items: center; gap: 10px; padding: 10px 12px; width: 100%;
       background: var(--panel-raised); border: 1px solid var(--line); border-radius: var(--r-s);
-      cursor: pointer; transition: background .15s, border-color .15s;
+      cursor: pointer; transition: background .15s, border-color .15s; text-align: left;
     }
     .bookmark-item:hover { background: var(--bg); border-color: var(--subtle); }
     .bookmark-key {
@@ -328,7 +345,7 @@
 
     @media (max-width: 700px) {
       .shell { width: min(100% - 24px, 560px); }
-      .topbar { height: 64px; }
+      .topbar { height: calc(64px + env(safe-area-inset-top, 0px)); }
       .brand-note { display: none; }
       .reader { min-height: 300px; padding-top: 42px; }
       .reader-meta { top: 19px; font-size: 10px; }
@@ -336,10 +353,10 @@
       .focus-guide { height: 120px; }
       .controls-panel { padding: var(--s-3) var(--s-4); border-radius: var(--r-m); }
       .play-button { width: 150px; height: 58px; font-size: 14px; border-radius: var(--r-s); }
-      .nav-button { width: 40px; height: 40px; border-radius: var(--r-s); }
+      .nav-button { width: 44px; height: 44px; border-radius: var(--r-s); }
       .library { padding: var(--s-3); flex-direction: column; align-items: stretch; gap: var(--s-3); }
       .library-actions { width: 100%; }
-      .library-actions .action-button { padding: 0 10px; font-size: 12px; min-height: 38px; }
+      .library-actions .action-button { padding: 0 10px; font-size: 12px; min-height: 44px; }
       .editor { padding: var(--s-3); }
       .editor-heading { flex-direction: column; align-items: flex-start; gap: var(--s-1); }
       .editor-bottom { flex-direction: column; align-items: stretch; }
@@ -356,17 +373,17 @@
       .shell { width: calc(100% - 16px); }
       .brand-name { font-size: 17px; }
       .play-button { width: 130px; padding: 0 16px; }
-      .nav-button { width: 38px; height: 38px; }
+      .nav-button { width: 44px; height: 44px; }
       .top-actions { gap: var(--s-1); }
-      .icon-button, .quiet-button { width: 38px; height: 38px; }
+      .icon-button, .quiet-button { width: 44px; min-height: 44px; }
     }
     .shell.is-zen { width: 100%; }
     .shell.is-zen .topbar, .shell.is-zen .controls-panel, .shell.is-zen .library,
     .shell.is-zen .editor, .shell.is-zen .message, .shell.is-zen footer { display: none; }
-    .shell.is-zen main { min-height: 100dvh; }
-    .shell.is-zen .reader { min-height: 100dvh; padding: 0 20px; cursor: pointer; }
+    .shell.is-zen main { min-height: 100vh; min-height: 100dvh; }
+    .shell.is-zen .reader { min-height: 100vh; min-height: 100dvh; padding: 0 20px; cursor: pointer; }
     .shell.is-zen .reader-meta, .shell.is-zen .focus-guide { display: none; }
-    .shell.is-zen .word-stage { width: min(100%, 1080px); min-height: 100dvh; }
+    .shell.is-zen .word-stage { width: min(100%, 1080px); min-height: 100vh; min-height: 100dvh; }
     .shell.is-zen .progress-area { position: fixed; z-index: 7; top: 0; left: 0; right: 0; padding: 0; pointer-events: none; }
     .shell.is-zen .progress-top { display: none; }
     .shell.is-zen .progress-track { height: 2px; background: rgba(255,255,255,.05); }
@@ -390,6 +407,35 @@
       .install-banner { flex-direction: column; align-items: stretch; }
       .install-banner .action-button { width: 100%; }
     }
+
+    /* ── Экспериментальный детектор внимания ── */
+    .camera-widget {
+      position: fixed; bottom: 20px; right: 20px; z-index: 150;
+      width: 100px; height: 100px; border-radius: var(--r-m); overflow: hidden;
+      border: 2px solid var(--line); background: #000; opacity: 0.7;
+      transition: opacity .25s ease, transform .25s ease;
+      box-shadow: 0 4px 18px rgba(0,0,0,.35);
+    }
+    .camera-widget video {
+      width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1);
+    }
+    .camera-status-dot {
+      position: absolute; top: 6px; right: 6px; width: 10px; height: 10px; border-radius: 50%;
+      background: #888; box-shadow: 0 0 0 2px rgba(0,0,0,.5);
+      transition: background .2s ease;
+    }
+    .camera-status-dot.is-active { background: #4caf50; }
+    .camera-status-dot.is-lost   { background: #f44336; }
+    .camera-hide-btn {
+      position: absolute; bottom: 4px; right: 4px; width: 20px; height: 20px;
+      border-radius: 50%; background: rgba(0,0,0,.65); color: #fff; border: none;
+      font-size: 14px; line-height: 1; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background .2s;
+    }
+    .camera-hide-btn:hover { background: rgba(0,0,0,.9); }
+    .shell.is-zen .camera-widget { opacity: 0.12; }
+    .shell.is-zen .camera-widget:hover { opacity: 0.6; }
   </style>
 </head>
 <body class="theme-dark">
@@ -424,7 +470,7 @@
         </div>
         <div class="focus-guide" aria-hidden="true"></div>
         <div class="word-stage" id="wordStage" aria-live="off">
-          <span class="word-bionic" id="wordBionic"></span><span class="word-before" id="wordBefore"></span><span class="word-pivot" id="wordPivot"></span><span class="word-after" id="wordAfter"></span>
+          <span class="word-left" id="wordLeft"><span class="word-bionic" id="wordBionic"></span><span class="word-before" id="wordBefore"></span></span><span class="word-pivot" id="wordPivot"></span><span class="word-after" id="wordAfter"></span>
         </div>
       </section>
       <section class="progress-area" aria-label="Прогресс чтения">
@@ -433,7 +479,7 @@
           <span class="wpm-badge" id="wpmBadge">320 слов/мин</span>
           <strong id="percentLabel">0%</strong>
         </div>
-        <div class="progress-track" id="progressBar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <div class="progress-track" id="progressBar" role="slider" tabindex="0" aria-label="Позиция в тексте, процентов" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
           <div class="progress-fill" id="progressFill"></div>
         </div>
       </section>
@@ -452,7 +498,7 @@
             <span id="playLabel">Читать</span>
           </button>
           <div class="transport-right">
-            <div class="keyboard-hint"><kbd>Space</kbd> · пауза<br><kbd>←</kbd> · назад<br><kbd>1-5</kbd> · закладки</div>
+            <div class="keyboard-hint"><kbd>Space</kbd> · пауза<br><kbd>←</kbd> · назад<br><kbd>1-5</kbd> · закладка · <kbd>Alt+1-5</kbd> · перейти</div>
           </div>
         </div>
       </section>
@@ -497,6 +543,16 @@
       </section>
     </main>
     <footer><span>Такт · чтение без отвлечений</span><span>Всё остаётся на этом устройстве</span></footer>
+    <button class="icon-button zen-exit" id="zenExit" type="button" aria-label="Выйти из режима Зен" title="Выйти из режима Зен">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
+
+  <!-- Окно камеры (скрыто по умолчанию) -->
+  <div class="camera-widget" id="cameraWidget" hidden>
+    <video id="cameraVideo" autoplay playsinline muted></video>
+    <span class="camera-status-dot" id="cameraStatusDot"></span>
+    <button class="camera-hide-btn" id="cameraHideBtn" type="button" aria-label="Скрыть камеру">×</button>
   </div>
 
   <div class="sheet-overlay" id="sheetOverlay"></div>
@@ -517,10 +573,10 @@
       <input class="sheet-slider" id="speedSlider" type="range" min="100" max="800" step="10" value="320" aria-label="Скорость чтения, слов в минуту">
       <div class="sheet-row" style="margin-top: var(--s-3);">
         <span class="sheet-row-label">Слов в блоке</span>
-        <div class="chunk-options" role="group" aria-label="Количество слов в блоке">
-          <button class="chunk-button" type="button" data-chunk-words="1" aria-pressed="true">1</button>
-          <button class="chunk-button" type="button" data-chunk-words="2" aria-pressed="false">2</button>
-          <button class="chunk-button" type="button" data-chunk-words="3" aria-pressed="false">3</button>
+        <div class="chunk-options" role="radiogroup" aria-label="Количество слов в блоке">
+          <button class="chunk-button" type="button" role="radio" data-chunk-words="1" aria-checked="true">1</button>
+          <button class="chunk-button" type="button" role="radio" data-chunk-words="2" aria-checked="false">2</button>
+          <button class="chunk-button" type="button" role="radio" data-chunk-words="3" aria-checked="false">3</button>
         </div>
       </div>
       <div class="sheet-row">
@@ -538,10 +594,10 @@
     </div>
     <div class="sheet-section">
       <div class="sheet-label">Семейство шрифта</div>
-      <div class="segmented fonts" role="group" aria-label="Семейство шрифта">
-        <button type="button" class="font-sans" data-font="sans" aria-pressed="true">Sans</button>
-        <button type="button" class="font-serif" data-font="serif" aria-pressed="false">Serif</button>
-        <button type="button" class="font-mono" data-font="mono" aria-pressed="false">Mono</button>
+      <div class="segmented fonts" role="radiogroup" aria-label="Семейство шрифта">
+        <button type="button" class="font-sans" role="radio" data-font="sans" aria-checked="true">Sans</button>
+        <button type="button" class="font-serif" role="radio" data-font="serif" aria-checked="false">Serif</button>
+        <button type="button" class="font-mono" role="radio" data-font="mono" aria-checked="false">Mono</button>
       </div>
     </div>
     <div class="sheet-section">
@@ -551,24 +607,37 @@
         <label class="dynamic-toggle"><input type="checkbox" id="bionicToggle" aria-label="Бионическое чтение"><span class="dynamic-switch"></span></label>
       </div>
     </div>
+
+    <!-- Экспериментальный детектор внимания -->
+    <div class="sheet-section">
+      <div class="sheet-label">Экспериментально</div>
+      <div class="sheet-row">
+        <span class="sheet-row-label">Отслеживание взгляда (камера)<small>Пауза, когда лицо не в кадре</small></span>
+        <label class="dynamic-toggle">
+          <input type="checkbox" id="faceTrackingToggle" aria-label="Отслеживание взгляда">
+          <span class="dynamic-switch"></span>
+        </label>
+      </div>
+    </div>
+
     <div class="sheet-section">
       <div class="sheet-label">Закладки</div>
       <div class="bookmark-list" id="bookmarkList"></div>
     </div>
     <div class="sheet-section">
       <div class="sheet-label">Цветовая тема</div>
-      <div class="segmented" role="group" aria-label="Цветовая тема">
-        <button type="button" data-theme="dark" aria-pressed="true">Тёмная</button>
-        <button type="button" data-theme="sepia" aria-pressed="false">Сепия</button>
-        <button type="button" data-theme="light" aria-pressed="false">Светлая</button>
+      <div class="segmented" role="radiogroup" aria-label="Цветовая тема">
+        <button type="button" role="radio" data-theme="dark" aria-checked="true">Тёмная</button>
+        <button type="button" role="radio" data-theme="sepia" aria-checked="false">Сепия</button>
+        <button type="button" role="radio" data-theme="light" aria-checked="false">Светлая</button>
       </div>
     </div>
     <div class="sheet-section">
       <div class="sheet-label">Акцент</div>
-      <div class="segmented" role="group" aria-label="Акцентный цвет">
-        <button type="button" data-accent="red" aria-pressed="true">Красный</button>
-        <button type="button" data-accent="amber" aria-pressed="false">Янтарный</button>
-        <button type="button" data-accent="blue" aria-pressed="false">Синий</button>
+      <div class="segmented" role="radiogroup" aria-label="Акцентный цвет">
+        <button type="button" role="radio" data-accent="red" aria-checked="true">Красный</button>
+        <button type="button" role="radio" data-accent="amber" aria-checked="false">Янтарный</button>
+        <button type="button" role="radio" data-accent="blue" aria-checked="false">Синий</button>
       </div>
     </div>
   </aside>
@@ -578,7 +647,7 @@
       <div class="modal-title">Добро пожаловать в «Такт»</div>
       <div class="modal-text">
         Это RSVP-читалка: слова появляются по одному в точке фокуса, чтобы вы читали быстрее и без отвлечений.<br><br>
-        Нажмите <b>Пробел</b> для старта, <b>←</b> — назад, цифры <b>1-5</b> — закладки. В режиме «Зен» работают свайпы.
+        Нажмите <b>Пробел</b> для старта, <b>←</b> — назад к началу предложения, цифры <b>1–5</b> — поставить закладку, <b>Alt+1–5</b> — перейти к ней. В режиме «Зен»: тап — пауза, свайпы — навигация.
       </div>
       <div class="modal-actions">
         <button class="modal-button primary" id="onboardingDone" type="button">Начать чтение</button>
@@ -588,9 +657,9 @@
 
   <div class="zen-hint" id="zenHint">
     <div class="zen-hint-box">
-      <span class="zen-hint-item"><span class="zen-hint-key">←</span> свайп назад</span>
-      <span class="zen-hint-item"><span class="zen-hint-key">→</span> свайп вперёд</span>
-      <span class="zen-hint-item"><span class="zen-hint-key">⏺</span> двойной тап — пауза</span>
+      <span class="zen-hint-item"><span class="zen-hint-key">⏺</span> тап — пауза</span>
+      <span class="zen-hint-item"><span class="zen-hint-key">←</span><span class="zen-hint-key">→</span> свайп — назад/вперёд</span>
+      <span class="zen-hint-item"><span class="zen-hint-key">✕</span> — выход</span>
     </div>
   </div>
 
@@ -623,7 +692,7 @@
       const DEMO_TEXT = "В конце 1811 года, в эпоху нам памятную, жил в своем поместье Ненарадове добрый Гаврила Гаврилович Р**. Он славился гостеприимством во всей округе; соседи поминутно ездили к нему поесть, попить и поиграть в бостон с его женой. Дочь его, Марья Гавриловна, была воспитана на французских романах и, следовательно, была влюблена. Предмет, избранный ею, был бедный армейский прапорщик, находившийся в отпуску в своей деревне. Разумеется, молодой человек пылал равною страстью, и родители его возлюбленной, заметив их взаимную склонность, запретили дочери о нем и думать. Но любовь молодых людей не была от того менее сильна.";
       const $ = (id) => document.getElementById(id);
       const els = {
-        before: $("wordBefore"), pivot: $("wordPivot"), after: $("wordAfter"), stage: $("wordStage"),
+        left: $("wordLeft"), before: $("wordBefore"), pivot: $("wordPivot"), after: $("wordAfter"), stage: $("wordStage"),
         bionic: $("wordBionic"),
         progressLabel: $("progressLabel"), percentLabel: $("percentLabel"), progressBar: $("progressBar"),
         progressFill: $("progressFill"), wpmBadge: $("wpmBadge"),
@@ -642,7 +711,8 @@
         onboardingOverlay: $("onboardingOverlay"), onboardingDone: $("onboardingDone"),
         zenHint: $("zenHint"),
         finishedOverlay: $("finishedOverlay"), finishedWords: $("finishedWords"),
-        finishedWpm: $("finishedWpm"), finishedRestart: $("finishedRestart"), finishedClose: $("finishedClose")
+        finishedWpm: $("finishedWpm"), finishedRestart: $("finishedRestart"), finishedClose: $("finishedClose"),
+        zenExit: $("zenExit")
       };
       let words = [];
       let index = 0;
@@ -658,9 +728,11 @@
       let savedTimer = null;
       let canPersistCurrentText = true;
       let bookmarks = [null, null, null, null, null];
-      let sessionStart = null;
       let wordsRead = 0;
-      let ui = { theme: "dark", fontSize: 48, fontFamily: "sans", bionic: false, accent: "red", zenHintShown: false };
+      let readingMs = 0;
+      let lastTickAt = 0;
+      let lastSavedIndex = -1;
+      let ui = { theme: "dark", fontSize: 48, fontFamily: "sans", bionic: false, accent: "red", zenHintShown: false, faceTracking: false };
       const FONT_MAP = {
         sans: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
         serif: '"Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif',
@@ -674,6 +746,19 @@
       const MAX_BLOCK_CHARACTERS = 28;
       const NON_BREAKING_WORDS = new Set(["а","и","но","да","или","либо","ли","в","во","на","над","о","об","обо","по","за","с","со","к","ко","у","от","до","из","изо","под","при","для","без","через","между","перед","после","около","про","как","что","если","чтобы","когда","пока","потому","хотя"]);
       const ABBREVIATIONS = new Set(["г-н","г-жа","г-ца","т.е","т.н","т.к","т.д","т.п","др","проф","акад","рис","прим","стр","ул","пер","д","кв","тов","гр","млн","млрд","тыс","руб","коп","см","мм","км","кг","г","л","м","с","ч","мин","сек","mr","mrs","dr","prof","vs","etc","inc","ltd","corp","jr","sr","st","fig","vol","no","ed","rev","approx","dept","est","govt"]);
+
+      // ── Переменные детектора внимания ──
+      let faceDetector = null;
+      let cameraStream = null;
+      let detectionInterval = null;
+      let lastFaceDetectedTime = 0;
+      let autoPaused = false;
+      const faceTrackingToggle = $("faceTrackingToggle");
+      const cameraWidget = $("cameraWidget");
+      const cameraVideo = $("cameraVideo");
+      const cameraStatusDot = $("cameraStatusDot");
+      const cameraHideBtn = $("cameraHideBtn");
+
       function isAbbreviation(word) {
         const clean = word.replace(/[^а-яёa-z.\-]/gi, "").toLowerCase();
         if (!clean) return false;
@@ -683,6 +768,7 @@
         return false;
       }
       function isSentenceEnd(word) {
+        if (/…["»”')\]]*$/.test(word)) return true;
         if (/\.{3,}["»”')\]]*$/.test(word)) return true;
         if (/[!?]["»”')\]]*$/.test(word) || /[!?]$/.test(word)) return true;
         if (/[.]["»”')\]]*$/.test(word) || /[.]$/.test(word)) {
@@ -717,10 +803,9 @@
         if (!els.bookmarkList) return;
         els.bookmarkList.innerHTML = "";
         for (let i = 0; i < 5; i++) {
-          const item = document.createElement("div");
+          const item = document.createElement("button");
+          item.type = "button";
           item.className = "bookmark-item";
-          item.setAttribute("role", "button");
-          item.setAttribute("tabindex", "0");
           const keySpan = document.createElement("span");
           keySpan.className = "bookmark-key";
           keySpan.textContent = String(i + 1);
@@ -735,7 +820,7 @@
           }
           item.append(keySpan, textSpan);
           item.addEventListener("click", () => jumpToBookmark(i));
-          item.addEventListener("keydown", (e) => { if (e.key === "Enter") jumpToBookmark(i); });
+          item.addEventListener("keydown", (e) => { if (e.key === " " || e.key === "Enter") e.stopPropagation(); });
           els.bookmarkList.appendChild(item);
         }
       }
@@ -752,16 +837,12 @@
       });
       let touchStartX = 0;
       let touchStartY = 0;
-      let lastTapTime = 0;
       els.reader.addEventListener("touchstart", (e) => {
         if (!zenMode) return;
         const t = e.touches[0];
         touchStartX = t.clientX;
         touchStartY = t.clientY;
-        const now = Date.now();
-        if (now - lastTapTime < 300) { e.preventDefault(); togglePlayback(); lastTapTime = 0; }
-        else { lastTapTime = now; }
-      }, { passive: false });
+      }, { passive: true });
       els.reader.addEventListener("touchend", (e) => {
         if (!zenMode) return;
         const t = e.changedTouches[0];
@@ -770,9 +851,12 @@
         if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) {
           e.preventDefault();
           if (dx < 0) {
-            if (playing) { stopPlayback(); const adv = Math.max(1, currentChunkSize || getChunkSize(index)); if (index + adv < words.length) { index += adv; render(); saveState(); } startPlayback(); }
-            else { const adv = Math.max(1, currentChunkSize || getChunkSize(index)); if (index + adv < words.length) { index += adv; render(); saveState(); } }
+            const adv = Math.max(1, currentChunkSize || getChunkSize(index));
+            if (index + adv < words.length) { index += adv; render(); persistProgress(false); if (playing) { if (timer !== null) window.clearTimeout(timer); timer = window.setTimeout(tick, delayForCurrentChunk()); lastTickAt = performance.now(); } }
           } else { rewindToSentenceStart(); }
+        } else if (Math.abs(dx) < 12 && Math.abs(dy) < 12) {
+          e.preventDefault();
+          togglePlayback();
         }
       }, { passive: false });
       function showMessage(text, kind = "") {
@@ -790,7 +874,7 @@
         document.documentElement.style.colorScheme = theme === "dark" ? "dark" : "light";
         document.querySelector('meta[name="theme-color"]').setAttribute("content", theme === "dark" ? "#101111" : (theme === "sepia" ? "#efe6d0" : "#f7f5ee"));
         ui.theme = theme;
-        document.querySelectorAll("[data-theme]").forEach((btn) => btn.setAttribute("aria-pressed", String(btn.dataset.theme === theme)));
+        document.querySelectorAll("[data-theme]").forEach((btn) => btn.setAttribute("aria-checked", String(btn.dataset.theme === theme)));
         saveUI();
       }
       function applyAccent(name) {
@@ -803,14 +887,14 @@
         root.style.setProperty("--focus-mark", a.focus);
         root.style.setProperty("--focus-mark-strong", a.focusStrong);
         ui.accent = name;
-        document.querySelectorAll("[data-accent]").forEach((btn) => btn.setAttribute("aria-pressed", String(btn.dataset.accent === name)));
+        document.querySelectorAll("[data-accent]").forEach((btn) => btn.setAttribute("aria-checked", String(btn.dataset.accent === name)));
         saveUI();
       }
       function applyFontFamily(family) {
         if (!FONT_MAP[family]) family = "sans";
         document.documentElement.style.setProperty("--reading-font", FONT_MAP[family]);
         ui.fontFamily = family;
-        document.querySelectorAll("[data-font]").forEach((btn) => btn.setAttribute("aria-pressed", String(btn.dataset.font === family)));
+        document.querySelectorAll("[data-font]").forEach((btn) => btn.setAttribute("aria-checked", String(btn.dataset.font === family)));
         saveUI();
       }
       function applyFontSize(size) {
@@ -848,21 +932,32 @@
             if (typeof parsed.bionic === "boolean") ui.bionic = parsed.bionic;
             if (["red", "amber", "blue"].includes(parsed.accent)) ui.accent = parsed.accent;
             if (typeof parsed.zenHintShown === "boolean") ui.zenHintShown = parsed.zenHintShown;
+            if (typeof parsed.faceTracking === "boolean") ui.faceTracking = parsed.faceTracking;
           }
         } catch (_) {}
       }
       function applyUI() { applyTheme(ui.theme); applyAccent(ui.accent); applyFontFamily(ui.fontFamily); applyFontSize(ui.fontSize); applyBionic(ui.bionic); }
       function toggleSheet(forceOpen) {
         const shouldOpen = typeof forceOpen === "boolean" ? forceOpen : !els.sheet.classList.contains("is-open");
+        const wasOpen = els.sheet.classList.contains("is-open");
         els.sheet.classList.toggle("is-open", shouldOpen);
         els.overlay.classList.toggle("is-open", shouldOpen);
         els.settings.setAttribute("aria-pressed", String(shouldOpen));
         els.settings.classList.toggle("is-open", shouldOpen);
         if (shouldOpen) { renderBookmarks(); setTimeout(() => els.sheetClose.focus(), 300); }
+        else if (wasOpen) { els.settings.focus(); }
       }
+      els.sheet.addEventListener("keydown", (e) => {
+        if (e.key !== "Tab") return;
+        const focusable = Array.from(els.sheet.querySelectorAll("button, input, [tabindex]")).filter((el) => !el.disabled && el.offsetParent !== null);
+        if (!focusable.length) return;
+        const first = focusable[0], last = focusable[focusable.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      });
       function showOnboarding() {
         try { if (localStorage.getItem("readerOnboarded")) return; } catch (_) {}
-        if (els.onboardingOverlay) els.onboardingOverlay.classList.add("is-open");
+        if (els.onboardingOverlay) { els.onboardingOverlay.classList.add("is-open"); setTimeout(() => els.onboardingDone.focus(), 60); }
       }
       function hideOnboarding() {
         if (els.onboardingOverlay) els.onboardingOverlay.classList.remove("is-open");
@@ -877,9 +972,12 @@
       }
       function showFinishedScreen() {
         if (!els.finishedOverlay) return;
-        els.finishedWords.textContent = String(words.length);
-        els.finishedWpm.textContent = String(wpm);
+        els.finishedWords.textContent = String(wordsRead || words.length);
+        const elapsedMin = readingMs / 60000;
+        const avgWpm = (elapsedMin > 0.05 && wordsRead > 0) ? Math.round(wordsRead / elapsedMin) : wpm;
+        els.finishedWpm.textContent = String(avgWpm);
         els.finishedOverlay.classList.add("is-open");
+        setTimeout(() => els.finishedClose.focus(), 60);
       }
       function hideFinishedScreen() {
         if (els.finishedOverlay) els.finishedOverlay.classList.remove("is-open");
@@ -896,7 +994,7 @@
       }
       function updateChunkButtons() {
         document.querySelectorAll("[data-chunk-words]").forEach((button) => {
-          button.setAttribute("aria-pressed", String(Number(button.dataset.chunkWords) === chunkWords));
+          button.setAttribute("aria-checked", String(Number(button.dataset.chunkWords) === chunkWords));
         });
       }
       function updateDynamicUI() { els.dynamic.checked = dynamicSpeed; }
@@ -931,6 +1029,10 @@
         }
         return Math.min(count, remaining);
       }
+      function persistProgress(force) {
+        if (!force && Math.abs(index - lastSavedIndex) < 10) return;
+        if (saveState()) lastSavedIndex = index;
+      }
       function saveState() {
         if (!canPersistCurrentText) return false;
         try {
@@ -941,6 +1043,20 @@
         } catch (_) { return false; }
       }
       function normalizeText(text) { return String(text || "").replace(/\uFEFF/g, "").replace(/\s+/g, " ").trim(); }
+      function tokenize(text) {
+        const raw = text ? text.split(/\s+/) : [];
+        const out = [];
+        let pending = "";
+        for (const token of raw) {
+          if (/[0-9а-яёa-z]/i.test(token)) { out.push(pending + token); pending = ""; }
+          else { pending = pending ? pending + token + " " : token + " "; }
+        }
+        if (pending.trim()) {
+          if (out.length) out[out.length - 1] += " " + pending.trim();
+          else out.push(pending.trim());
+        }
+        return out;
+      }
       function getPhrasePivotIndex(phrase) {
         const characters = Array.from(phrase);
         const center = characters.length / 2;
@@ -966,7 +1082,7 @@
         const displayText = visibleWords.join(" ");
         els.stage.classList.remove("is-empty");
         els.stage.classList.toggle("is-phrase", visibleWords.length > 1);
-        if (!els.stage.contains(els.before)) { els.stage.innerHTML = ""; els.stage.append(els.bionic, els.before, els.pivot, els.after); }
+        if (!els.stage.contains(els.left)) { els.stage.innerHTML = ""; els.stage.append(els.left, els.pivot, els.after); }
         const point = visibleWords.length > 1 ? getPhrasePivotIndex(displayText) : Math.max(0, Math.min(firstWord.length - 1, Math.floor(firstWord.length / 3)));
         const isBionic = ui.bionic && visibleWords.length === 1;
         els.stage.classList.toggle("is-bionic", isBionic);
@@ -1009,10 +1125,10 @@
       function setText(text, title, shouldSave = true) {
         stopPlayback();
         const normalized = normalizeText(text);
-        words = normalized ? normalized.split(/\s+/) : [];
+        words = tokenize(normalized);
         canPersistCurrentText = normalized.length <= 1000000;
         index = 0; finished = false; bookmarks = [null, null, null, null, null];
-        sessionStart = null; wordsRead = 0;
+        wordsRead = 0; readingMs = 0; lastTickAt = 0; lastSavedIndex = -1;
         if (title) currentTitle = title;
         els.book.textContent = currentTitle;
         render(); renderBookmarks();
@@ -1025,8 +1141,8 @@
         let wordFactor = 1;
         if (cleanWord.length >= 13 || syllables >= 6) wordFactor = 1.18;
         else if (cleanWord.length >= 9 || syllables >= 4) wordFactor = 1.1;
-        if (/[.!?…]["»”')\]]*$/.test(word)) return base * wordFactor * 1.6;
-        if (/[,;:—–]["»”')\]]*$/.test(word) || /[-—–]$/.test(word)) return base * wordFactor * 1.8;
+        if (/[.!?…]["»”')\]]*$/.test(word)) return base * wordFactor * 1.8;
+        if (/[,;:—–]["»”')\]]*$/.test(word) || /[-—–]$/.test(word)) return base * wordFactor * 1.35;
         return base * wordFactor;
       }
       function getDynamicFactor() {
@@ -1062,20 +1178,27 @@
         }
         index += advanceBy;
         wordsRead += advanceBy;
+        if (lastTickAt) { readingMs += performance.now() - lastTickAt; lastTickAt = performance.now(); }
         render();
-        saveState();
+        persistProgress(false);
         timer = window.setTimeout(tick, delayForCurrentChunk());
       }
       function startPlayback() {
         if (!words.length) { showMessage("Сначала добавьте текст для чтения.", "error"); return; }
         if (finished) return;
-        if (sessionStart === null) sessionStart = Date.now();
+        lastTickAt = performance.now();
         playing = true;
         render();
         timer = window.setTimeout(tick, delayForCurrentChunk());
       }
-      function stopPlayback() { playing = false; if (timer !== null) window.clearTimeout(timer); timer = null; }
-      function togglePlayback() { if (playing) { stopPlayback(); render(); } else startPlayback(); }
+      function stopPlayback() { playing = false; lastTickAt = 0; if (timer !== null) window.clearTimeout(timer); timer = null; persistProgress(true); }
+      function togglePlayback() {
+        if (autoPaused) {
+          // Пользователь вручную вмешался — авто-пауза отменяется
+          autoPaused = false;
+        }
+        if (playing) { stopPlayback(); render(); } else startPlayback();
+      }
       function rewindToSentenceStart() {
         if (index === 0) return;
         const atSentenceStart = (index === 0 || isSentenceEnd(words[index - 1]));
@@ -1099,7 +1222,7 @@
         render(); saveState();
       }
       function resetToStart() {
-        stopPlayback(); index = 0; finished = false; sessionStart = null; wordsRead = 0; render(); saveState();
+        stopPlayback(); index = 0; finished = false; wordsRead = 0; readingMs = 0; lastTickAt = 0; render(); persistProgress(true);
         showMessage("Чтение начинается с первого слова.", "success");
       }
       function openEditor() { stopPlayback(); els.textarea.value = words.join(" "); els.editor.classList.add("is-open"); els.textarea.focus(); render(); }
@@ -1153,6 +1276,24 @@
         if (!normalizeText(text)) throw new Error("В файле FB2 не удалось найти текст.");
         return text;
       }
+      function decodeTextFile(buffer) {
+        const bytes = new Uint8Array(buffer);
+        let encoding = "utf-8";
+        if (bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) encoding = "utf-8";
+        else if (bytes[0] === 0xFF && bytes[1] === 0xFE) encoding = "utf-16le";
+        else if (bytes[0] === 0xFE && bytes[1] === 0xFF) encoding = "utf-16be";
+        let decoded;
+        try { decoded = new TextDecoder(encoding).decode(bytes); }
+        catch (_) { decoded = new TextDecoder("utf-8").decode(bytes); }
+        if (decoded.includes("\uFFFD") && encoding === "utf-8") {
+          try {
+            const cp1251 = new TextDecoder("windows-1251").decode(bytes);
+            const cyr = (s) => (s.match(/[а-яё]/gi) || []).length;
+            if (cyr(cp1251) > cyr(decoded)) decoded = cp1251;
+          } catch (_) {}
+        }
+        return decoded;
+      }
       function readAsArrayBuffer(file) {
         return new Promise((resolve, reject) => {
           const reader = new FileReader();
@@ -1167,11 +1308,11 @@
         const extension = file.name.toLowerCase().split(".").pop();
         try {
           const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
-          showMessage("Открываю «" + file.name + "» (" + sizeMb + " МБ)…", "loading");
+          showMessage("Открываю «" + file.name + "» (" + sizeMb + " МБ)…");
           await new Promise((r) => window.setTimeout(r, 40));
           let text;
           if (extension === "txt") {
-            text = await file.text(); text = text.replace(/^\uFEFF/, "");
+            text = decodeTextFile(await readAsArrayBuffer(file)).replace(/^\uFEFF/, "");
             if (!normalizeText(text)) throw new Error("Файл пуст.");
           } else if (extension === "fb2") {
             text = parseFb2(await readAsArrayBuffer(file));
@@ -1194,7 +1335,7 @@
           if (!state || typeof state.text !== "string" || !Number.isFinite(state.wpm) || !Number.isFinite(state.index)) return false;
           const normalized = normalizeText(state.text);
           if (!normalized) return false;
-          words = normalized.split(/\s+/);
+          words = tokenize(normalized);
           canPersistCurrentText = normalized.length <= 1000000;
           index = Math.max(0, Math.min(words.length - 1, Math.floor(state.index)));
           wpm = Math.max(100, Math.min(800, Math.round(state.wpm / 10) * 10));
@@ -1208,13 +1349,144 @@
           return true;
         } catch (_) { return false; }
       }
+
+      // ── Детектор внимания: инициализация, камера, цикл ──
+      async function initFaceDetector() {
+        try {
+          const vision = await import("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/vision_bundle.mjs");
+          const { FilesetResolver, FaceDetector } = vision;
+          const filesetResolver = await FilesetResolver.forVisionTasks(
+            "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
+          );
+          faceDetector = await FaceDetector.createFromOptions(filesetResolver, {
+            baseOptions: {
+              modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite",
+              delegate: "GPU"
+            },
+            runningMode: "VIDEO"
+          });
+          return true;
+        } catch (e) {
+          console.error("MediaPipe init failed:", e);
+          showMessage("Для отслеживания взгляда нужен интернет", "error");
+          return false;
+        }
+      }
+
+      async function startCamera() {
+        try {
+          cameraStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: "user" },
+            audio: false
+          });
+          cameraVideo.srcObject = cameraStream;
+          await cameraVideo.play();
+          cameraWidget.hidden = false;
+          lastFaceDetectedTime = Date.now();
+          return true;
+        } catch (e) {
+          console.error("Camera access failed:", e);
+          showMessage("Нет доступа к камере", "error");
+          return false;
+        }
+      }
+
+      function stopCamera() {
+        if (detectionInterval) {
+          clearInterval(detectionInterval);
+          detectionInterval = null;
+        }
+        if (cameraStream) {
+          cameraStream.getTracks().forEach((t) => t.stop());
+          cameraStream = null;
+        }
+        cameraWidget.hidden = true;
+        // Если чтение было остановлено только из-за авто-паузы — возобновляем
+        if (autoPaused) {
+          autoPaused = false;
+          startPlayback();
+        }
+      }
+
+      function startDetectionLoop() {
+        if (detectionInterval) clearInterval(detectionInterval);
+        // 400 мс ≈ 2.5 раза в секунду — бережно к батарее
+        detectionInterval = setInterval(() => {
+          if (!faceDetector || !cameraStream) return;
+          try {
+            const detections = faceDetector.detectForVideo(cameraVideo, performance.now());
+            const hasFace = detections?.detections?.length > 0;
+            if (hasFace) {
+              lastFaceDetectedTime = Date.now();
+              cameraStatusDot.className = "camera-status-dot is-active";
+              if (autoPaused) {
+                autoPaused = false;
+                startPlayback();
+              }
+            } else {
+              cameraStatusDot.className = "camera-status-dot is-lost";
+              // Авто-пауза только если чтение активно и лицо пропало > 2 сек
+              if (playing && !autoPaused && Date.now() - lastFaceDetectedTime > 2000) {
+                autoPaused = true;
+                stopPlayback();
+              }
+            }
+          } catch (e) {
+            console.warn("Face detection error:", e);
+          }
+        }, 400);
+      }
+
+      async function enableFaceTracking() {
+        const okMedia = await initFaceDetector();
+        if (!okMedia) {
+          faceTrackingToggle.checked = false;
+          ui.faceTracking = false;
+          saveUI();
+          return false;
+        }
+        const okCam = await startCamera();
+        if (!okCam) {
+          faceTrackingToggle.checked = false;
+          ui.faceTracking = false;
+          saveUI();
+          return false;
+        }
+        startDetectionLoop();
+        ui.faceTracking = true;
+        saveUI();
+        showMessage("Отслеживание взгляда включено", "success");
+        return true;
+      }
+
+      function disableFaceTracking() {
+        stopCamera();
+        faceTrackingToggle.checked = false;
+        ui.faceTracking = false;
+        saveUI();
+        showMessage("Отслеживание взгляда выключено", "success");
+      }
+
+      faceTrackingToggle.addEventListener("change", async () => {
+        if (faceTrackingToggle.checked) {
+          await enableFaceTracking();
+        } else {
+          disableFaceTracking();
+        }
+      });
+
+      cameraHideBtn.addEventListener("click", () => {
+        cameraWidget.hidden = true;
+      });
+
+      // ── Привязка основных обработчиков ──
       $("playButton").addEventListener("click", togglePlayback);
       els.rewind.addEventListener("click", rewindToSentenceStart);
       els.zen.addEventListener("click", () => setZenMode(!zenMode));
       els.settings.addEventListener("click", () => toggleSheet());
       els.sheetClose.addEventListener("click", () => toggleSheet(false));
       els.overlay.addEventListener("click", () => toggleSheet(false));
-      els.reader.addEventListener("click", (e) => { if (zenMode && Math.abs(e.clientX - touchStartX) < 10) setZenMode(false); });
+      els.zenExit.addEventListener("click", () => setZenMode(false));
       document.querySelectorAll("[data-chunk-words]").forEach((button) => {
         button.addEventListener("click", () => {
           const selected = Number(button.dataset.chunkWords);
@@ -1233,14 +1505,27 @@
         if (playing) { if (timer !== null) window.clearTimeout(timer); timer = window.setTimeout(tick, delayForCurrentChunk()); }
       });
       els.slider.addEventListener("input", () => applyWpm(els.slider.value));
+      const seekToFraction = (fraction) => {
+        if (!words.length) return;
+        const percent = Math.max(0, Math.min(1, fraction));
+        index = Math.min(words.length - 1, Math.floor(percent * words.length));
+        finished = false;
+        if (playing) { if (timer !== null) window.clearTimeout(timer); timer = window.setTimeout(tick, delayForCurrentChunk()); lastTickAt = performance.now(); }
+        render(); persistProgress(true);
+      };
+      els.progressBar.addEventListener("keydown", (e) => {
+        const current = words.length ? index / words.length : 0;
+        if (e.key === "ArrowLeft") { e.preventDefault(); e.stopPropagation(); seekToFraction(current - 0.01); }
+        else if (e.key === "ArrowRight") { e.preventDefault(); e.stopPropagation(); seekToFraction(current + 0.01); }
+        else if (e.key === "PageDown") { e.preventDefault(); e.stopPropagation(); seekToFraction(current - 0.1); }
+        else if (e.key === "PageUp") { e.preventDefault(); e.stopPropagation(); seekToFraction(current + 0.1); }
+        else if (e.key === "Home") { e.preventDefault(); e.stopPropagation(); seekToFraction(0); }
+        else if (e.key === "End") { e.preventDefault(); e.stopPropagation(); seekToFraction(1); }
+      });
       els.progressBar.addEventListener("click", (e) => {
         if (!words.length) return;
         const rect = els.progressBar.getBoundingClientRect();
-        const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-        index = Math.min(words.length - 1, Math.floor(percent * words.length));
-        finished = false;
-        if (playing) { if (timer !== null) window.clearTimeout(timer); timer = window.setTimeout(tick, delayForCurrentChunk()); }
-        render(); saveState();
+        seekToFraction((e.clientX - rect.left) / rect.width);
       });
       els.restart.addEventListener("click", resetToStart);
       $("editButton").addEventListener("click", () => { if (els.editor.classList.contains("is-open")) closeEditor(); else openEditor(); });
@@ -1258,9 +1543,12 @@
       $("resetAll").addEventListener("click", () => {
         if (!window.confirm("Сбросить весь прогресс и настройки? Это действие нельзя отменить.")) return;
         stopPlayback();
-        try { localStorage.removeItem(STORAGE_KEY); } catch (_) {}
+        disableFaceTracking();
+        try { localStorage.removeItem(STORAGE_KEY); localStorage.removeItem(UI_KEY); } catch (_) {}
+        ui = { theme: "dark", fontSize: 48, fontFamily: "sans", bionic: false, accent: "red", zenHintShown: ui.zenHintShown, faceTracking: false };
+        applyUI();
         wpm = 320; chunkWords = 1; dynamicSpeed = false; bookmarks = [null, null, null, null, null];
-        sessionStart = null; wordsRead = 0;
+        wordsRead = 0; readingMs = 0; lastTickAt = 0; lastSavedIndex = -1;
         updateChunkButtons(); updateDynamicUI();
         els.slider.value = "320"; els.speedValue.textContent = "320"; els.wpmBadge.textContent = "320 слов/мин";
         currentTitle = "А. С. Пушкин · «Метель»";
@@ -1276,10 +1564,13 @@
         const editing = els.editor.classList.contains("is-open") || els.sheet.classList.contains("is-open") ||
           (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)));
         if (event.key === "Escape") {
+          if (els.finishedOverlay.classList.contains("is-open")) { hideFinishedScreen(); return; }
+          if (els.onboardingOverlay.classList.contains("is-open")) { hideOnboarding(); return; }
           if (els.sheet.classList.contains("is-open")) { toggleSheet(false); return; }
-          if (zenMode) setZenMode(false);
+          if (zenMode) { setZenMode(false); return; }
           if (els.editor.classList.contains("is-open")) closeEditor();
         }
+        if (target === els.progressBar) return;
         if ((event.code === "Space" || event.key === " ") && !editing) { event.preventDefault(); togglePlayback(); }
         if ((event.code === "ArrowLeft" || event.key === "ArrowLeft") && !editing) { event.preventDefault(); rewindToSentenceStart(); }
         if (!editing && /^[1-5]$/.test(event.key)) {
@@ -1288,11 +1579,21 @@
           else { event.preventDefault(); saveBookmark(slot); }
         }
       });
-      window.addEventListener("resize", render);
+      window.addEventListener("pagehide", () => persistProgress(true));
+      document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") persistProgress(true); });
+      let resizeLastWidth = window.innerWidth;
+      let resizeTimer = null;
+      window.addEventListener("resize", () => {
+        if (window.innerWidth === resizeLastWidth) return;
+        resizeLastWidth = window.innerWidth;
+        window.clearTimeout(resizeTimer);
+        resizeTimer = window.setTimeout(render, 150);
+      });
+
       loadUI();
       applyUI();
       const restored = restoreState();
-      if (!restored) { words = DEMO_TEXT.split(/\s+/); index = 0; }
+      if (!restored) { words = tokenize(DEMO_TEXT); index = 0; }
       updateChunkButtons();
       updateDynamicUI();
       els.slider.value = String(wpm);
@@ -1301,6 +1602,13 @@
       renderBookmarks();
       render();
       showOnboarding();
+
+      // Восстановление состояния детектора внимания
+      if (ui.faceTracking) {
+        faceTrackingToggle.checked = true;
+        // Не запускаем камеру автоматически при загрузке, чтобы не раздражать.
+        // Пользователь может включить её заново в настройках.
+      }
     })();
   </script>
 
