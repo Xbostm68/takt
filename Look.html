@@ -1,0 +1,1673 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#101111">
+  <meta name="description" content="Тихий инструмент для чтения по одному слову.">
+  <link rel="manifest" href="manifest.json">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Такт">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 40 40%22%3E%3Ccircle cx=%2220%22 cy=%2220%22 r=%2218%22 fill=%22%23101111%22 stroke=%22%23e75248%22 stroke-width=%222%22/%3E%3Cpath d=%22M20 9v22%22 stroke=%22%23e75248%22/%3E%3C/svg%3E">
+  <title>Такт — RSVP-читалка</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #101111; --panel: #171918; --panel-raised: #1d201f;
+      --line: #303433; --text: #f1f0eb; --muted: #929994; --subtle: #68706b;
+      --accent: #e75248; --accent-dim: #74342f; --accent-soft: rgba(231,82,72,.13);
+      --green: #b8c6ad; --overlay: rgba(0,0,0,.55);
+      --focus-mark: rgba(231,82,72,.22); --focus-mark-strong: rgba(231,82,72,.55);
+      --reading-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --reading-size: 48px;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --serif: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+      --mono: "SF Mono", "JetBrains Mono", Consolas, Menlo, monospace;
+      --r-s: 8px; --r-m: 12px; --r-l: 18px;
+      --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px; --s-5: 24px; --s-6: 32px;
+    }
+    body.theme-sepia {
+      --bg: #efe6d0; --panel: #e6dcc3; --panel-raised: #ddd1b4;
+      --line: #b5a77f; --text: #3a2d1a; --muted: #6b5839; --subtle: #7d6a47;
+      --green: #5f7a4f; --overlay: rgba(58,45,26,.45);
+    }
+    body.theme-light {
+      --bg: #f7f5ee; --panel: #eceadf; --panel-raised: #e2dfcf;
+      --line: #c9c6b5; --text: #1a1a1a; --muted: #555550; --subtle: #7a7a74;
+      --green: #3f7a4f; --overlay: rgba(26,26,26,.45);
+    }
+    * { box-sizing: border-box; }
+    html { min-width: 320px; min-height: 100%; background: var(--bg); transition: background .3s ease; }
+    body {
+      margin: 0; min-height: 100vh; min-height: 100dvh; background: var(--bg); color: var(--text);
+      font-family: var(--sans); -webkit-font-smoothing: antialiased; letter-spacing: .01em;
+      transition: background .3s ease, color .3s ease;
+    }
+    body::before {
+      content: ""; pointer-events: none; position: fixed; inset: 0; z-index: 5; opacity: .10;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.86' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.16'/%3E%3C/svg%3E");
+      mix-blend-mode: overlay;
+    }
+    body.theme-sepia::before, body.theme-light::before { opacity: .04; }
+    button, input, textarea, select { font: inherit; color: inherit; }
+    button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+    .drop-overlay {
+      position: fixed; inset: 0; z-index: 100; display: none; align-items: center; justify-content: center;
+      background: rgba(16,17,17,.85); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    }
+    .drop-overlay.is-active { display: flex; }
+    .drop-box { padding: 48px 64px; border: 2px dashed var(--accent); border-radius: var(--r-l); text-align: center; color: var(--text); }
+    .drop-box-title { font-family: var(--serif); font-size: 24px; margin-bottom: 8px; }
+    .drop-box-sub { font-size: 13px; color: var(--muted); }
+
+    .shell { width: min(100% - 40px, 980px); margin: 0 auto; min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; }
+    .topbar {
+      height: calc(72px + env(safe-area-inset-top, 0px)); padding-top: env(safe-area-inset-top, 0px);
+      display: flex; justify-content: space-between; align-items: center;
+      border-bottom: 1px solid var(--line); flex: 0 0 auto;
+    }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand-mark { width: 28px; height: 28px; border: 1px solid var(--accent); border-radius: 50%; display: grid; place-items: center; position: relative; }
+    .brand-mark::before { content: ""; position: absolute; width: 1px; height: 14px; background: var(--accent); }
+    .brand-mark::after { content: ""; width: 4px; height: 4px; background: var(--accent); border-radius: 50%; }
+    .brand-name { font-family: var(--serif); font-size: 20px; letter-spacing: .11em; }
+    .brand-note { color: var(--muted); font-size: 11px; letter-spacing: .15em; text-transform: uppercase; margin-left: 3px; }
+    .top-actions { display: flex; gap: var(--s-2); }
+    .icon-button, .quiet-button {
+      background: transparent; border: 1px solid var(--line); border-radius: var(--r-s); color: var(--text);
+      min-height: 44px; width: 44px; padding: 0; cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center;
+      transition: background .2s, border-color .2s, color .2s, transform .15s;
+    }
+    .icon-button:hover, .quiet-button:hover { background: var(--panel-raised); border-color: var(--subtle); }
+    .icon-button:active, .quiet-button:active { transform: scale(.95); }
+    .icon-button svg, .quiet-button svg { width: 18px; height: 18px; flex: 0 0 auto; }
+    .settings-button svg { transition: transform .4s ease; }
+    .settings-button.is-open svg { transform: rotate(90deg); }
+    .zen-button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+    main { flex: 1; display: flex; flex-direction: column; }
+    .reader {
+      flex: 1; min-height: 360px; position: relative;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 44px 12px 28px; touch-action: pan-y;
+    }
+    .reader-meta {
+      width: 100%; position: absolute; top: 27px; left: 0; display: flex; align-items: center;
+      justify-content: space-between; gap: 12px; color: var(--muted); font-size: 12px;
+    }
+    .reading-label { display: flex; align-items: center; gap: 9px; letter-spacing: .12em; text-transform: uppercase; }
+    .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--subtle); transition: background .2s; }
+    .status-dot.is-playing { background: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); animation: pulse 1.6s ease-in-out infinite; }
+    @keyframes pulse { 0%,100%{box-shadow:0 0 0 4px var(--accent-soft)} 50%{box-shadow:0 0 0 8px rgba(231,82,72,.04)} }
+    .book-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; max-width: 52%; }
+
+    .word-stage {
+      width: min(100%, 760px); min-height: 180px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+      align-items: center;
+      font-family: var(--reading-font); font-size: clamp(24px, var(--reading-size), 104px);
+      font-weight: 500; letter-spacing: -.045em; line-height: 1.15; user-select: none; position: relative;
+      opacity: 1; transition: opacity .12s ease-out, transform .12s ease-out;
+    }
+    .word-stage.fade-out { opacity: 0; transform: translateY(2px); }
+    .word-left { justify-self: end; text-align: right; white-space: pre; }
+    .word-bionic { font-weight: 700; }
+    .word-pivot { color: var(--accent); transition: color .3s ease; }
+    .word-after { justify-self: start; text-align: left; white-space: pre; }
+    .word-stage.is-empty { display: flex; justify-content: center; text-align: center; }
+    .empty-word { color: var(--muted); font-size: clamp(24px, 5vw, 36px); letter-spacing: -.025em; font-family: var(--sans); }
+    .word-stage:not(.is-bionic) .word-bionic { display: none; }
+    .focus-guide {
+      position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); height: 160px; width: 1px;
+      background: linear-gradient(to bottom, transparent 0%, var(--focus-mark) 15%, var(--focus-mark) 40%, transparent 50%, var(--focus-mark) 60%, var(--focus-mark) 85%, transparent 100%);
+      pointer-events: none;
+    }
+    .focus-guide::before, .focus-guide::after { content: ""; position: absolute; left: 50%; transform: translateX(-50%); width: 14px; height: 1px; background: var(--focus-mark-strong); }
+    .focus-guide::before { top: -10px; }
+    .focus-guide::after { bottom: -10px; }
+    .word-stage.is-phrase { font-size: clamp(24px, calc(var(--reading-size) * 0.7), 68px); letter-spacing: -.035em; }
+
+    .progress-area { padding: 0 0 20px; }
+    .progress-top { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+    .progress-top strong { color: var(--text); font-weight: 500; font-variant-numeric: tabular-nums; }
+    .wpm-badge { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+    .progress-track { height: 6px; overflow: hidden; background: var(--line); border-radius: 3px; cursor: pointer; }
+    .progress-fill { width: 0; height: 100%; background: var(--accent); transition: width .12s linear; border-radius: 3px; }
+    .controls-panel {
+      margin: 12px 0 28px; padding: var(--s-4) var(--s-5); background: var(--panel); border: 1px solid var(--line);
+      border-radius: var(--r-l); box-shadow: 0 8px 30px rgba(0,0,0,.12); transition: background .3s ease, border-color .3s ease;
+    }
+    .transport-row { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: var(--s-3); }
+    .transport-left, .transport-right { display: flex; align-items: center; gap: var(--s-2); }
+    .transport-left { justify-self: start; }
+    .transport-right { justify-self: end; }
+    .nav-button {
+      width: 44px; height: 44px; padding: 0; border: 1px solid var(--line); border-radius: var(--r-m);
+      background: var(--panel-raised); color: var(--text); cursor: pointer;
+      display: inline-flex; justify-content: center; align-items: center; transition: background .2s, border-color .2s, color .2s, transform .15s;
+    }
+    .nav-button:hover { background: var(--bg); border-color: var(--subtle); }
+    .nav-button:active { transform: scale(.94); }
+    .nav-button:disabled { opacity: .35; cursor: default; }
+    .nav-button:disabled:hover { background: var(--panel-raised); border-color: var(--line); transform: none; }
+    .nav-button svg { width: 18px; height: 18px; fill: currentColor; }
+    .play-button {
+      border: 0; border-radius: var(--r-m); width: 180px; height: 64px; padding: 0 24px;
+      display: inline-flex; justify-content: center; align-items: center; gap: 12px; cursor: pointer;
+      color: #fff; background: var(--accent); font-size: 15px; font-weight: 600;
+      box-shadow: 0 8px 24px rgba(231,82,72,.28), inset 0 1px 0 rgba(255,255,255,.18); transition: background .2s, transform .15s, box-shadow .2s;
+    }
+    .play-button:hover { background: color-mix(in srgb, var(--accent) 90%, white); transform: translateY(-1px); box-shadow: 0 10px 28px rgba(231,82,72,.35); }
+    .play-button:active { transform: translateY(0); box-shadow: 0 4px 14px rgba(231,82,72,.25); }
+    .play-icon { width: 18px; height: 18px; fill: currentColor; flex: 0 0 auto; }
+    .keyboard-hint { color: var(--muted); font-size: 11px; text-align: right; line-height: 1.7; }
+    kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 6px; color: var(--text); font: inherit; font-size: 10px; background: var(--panel-raised); }
+    .library {
+      margin: 0 0 20px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-m);
+      padding: var(--s-4) var(--s-5); display: flex; justify-content: space-between; align-items: center; gap: 20px;
+    }
+    .library-copy { min-width: 0; }
+    .library-title { font-family: var(--serif); font-size: 16px; margin-bottom: 5px; }
+    .library-subtitle { font-size: 12px; line-height: 1.5; color: var(--muted); }
+    .library-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-2); flex: 0 0 auto; }
+    .library-actions .reset-button { grid-column: 1 / -1; }
+    .action-button {
+      min-height: 42px; padding: 0 14px; border-radius: var(--r-s); border: 1px solid var(--line);
+      background: var(--panel-raised); color: var(--text); cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center; gap: var(--s-2);
+      white-space: nowrap; transition: background .18s, border-color .18s, transform .15s; font-size: 13px;
+    }
+    .action-button:hover { background: var(--bg); border-color: var(--subtle); }
+    .action-button:active { transform: scale(.97); }
+    .action-button svg { width: 15px; height: 15px; flex: 0 0 auto; stroke: currentColor; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+    .reset-button { color: var(--muted); }
+    .reset-button.danger { color: #f08075; border-color: rgba(231,82,72,.35); }
+    .reset-button.danger:hover { background: rgba(231,82,72,.08); border-color: rgba(231,82,72,.5); }
+    .file-input { display: none; }
+    .editor { display: none; margin: -10px 0 24px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-m); padding: var(--s-4); }
+    .editor.is-open { display: block; animation: reveal .22s ease-out both; }
+    @keyframes reveal { from{opacity:0;transform:translateY(5px)} to{opacity:1;transform:translateY(0)} }
+    .editor-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 13px; }
+    .editor-heading strong { font-family: var(--serif); font-size: 17px; font-weight: 500; }
+    .editor-heading span { color: var(--muted); font-size: 12px; }
+    textarea {
+      display: block; width: 100%; min-height: 150px; resize: vertical; border: 1px solid var(--line);
+      border-radius: var(--r-s); padding: 13px; background: var(--bg); color: var(--text); line-height: 1.65;
+      font-size: 14px; transition: background .3s, color .3s, border-color .2s;
+    }
+    textarea:focus { border-color: var(--accent); outline: none; }
+    textarea::placeholder { color: var(--subtle); }
+    .editor-bottom { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 12px; }
+    .editor-buttons { display: flex; gap: var(--s-2); }
+    .apply-button { background: var(--accent); border-color: var(--accent); color: white; }
+    .apply-button:hover { background: color-mix(in srgb, var(--accent) 90%, white); border-color: color-mix(in srgb, var(--accent) 90%, white); }
+    .message { min-height: 20px; margin: 0 0 12px; font-size: 12px; color: var(--muted); }
+    .message.error { color: #f08075; }
+    .message.success { color: var(--green); }
+    .message.warning { color: #d6bd82; }
+    .message:empty { display: none; }
+    footer { display: flex; justify-content: space-between; gap: 10px; padding: 0 0 max(20px, env(safe-area-inset-bottom)); color: var(--subtle); font-size: 10px; letter-spacing: .09em; text-transform: uppercase; }
+
+    .sheet-overlay { position: fixed; inset: 0; background: var(--overlay); z-index: 50; opacity: 0; pointer-events: none; transition: opacity .25s ease; backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+    .sheet-overlay.is-open { opacity: 1; pointer-events: auto; }
+
+    .sheet {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; background: var(--panel);
+      border-top: 1px solid var(--line); border-radius: 20px 20px 0 0;
+      padding: 8px 24px max(24px, env(safe-area-inset-bottom));
+      transform: translateY(100%); transition: transform .32s cubic-bezier(.2,.8,.3,1);
+      max-width: 640px; margin: 0 auto;
+      height: min(85dvh, 720px);
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      box-shadow: 0 -20px 60px rgba(0,0,0,.25);
+    }
+
+    .sheet.is-open { transform: translateY(0); }
+    .sheet-handle { width: 42px; height: 4px; background: var(--subtle); border-radius: 2px; margin: 6px auto 18px; }
+    .sheet-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 22px; }
+    .sheet-title { font-family: var(--serif); font-size: 20px; font-weight: 500; }
+    .sheet-close {
+      background: var(--panel-raised); border: 1px solid var(--line); color: var(--muted);
+      width: 44px; height: 44px; border-radius: var(--r-s); cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center; transition: color .2s, background .2s;
+    }
+    .sheet-close:hover { color: var(--text); background: var(--bg); }
+    .sheet-close svg { width: 14px; height: 14px; }
+    .sheet-section { margin-bottom: 24px; }
+    .sheet-section:last-child { margin-bottom: 0; }
+    .sheet-label { color: var(--muted); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; margin-bottom: 12px; }
+    .sheet-row {
+      display: flex; justify-content: space-between; align-items: center; gap: 16px;
+      padding: 12px 14px; background: var(--panel-raised); border: 1px solid var(--line); border-radius: var(--r-s); margin-bottom: var(--s-2);
+    }
+    .sheet-row-label { font-size: 14px; flex: 1; }
+    .sheet-row-label small { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .sheet-value { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; min-width: 42px; text-align: right; }
+    .sheet-slider { width: 100%; height: 28px; accent-color: var(--accent); cursor: pointer; margin: 4px 0 0; }
+    .dynamic-toggle { position: relative; display: inline-flex; align-items: center; cursor: pointer; min-height: 44px; flex: 0 0 auto; }
+    .dynamic-toggle input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; z-index: 1; }
+    .dynamic-switch { pointer-events: none; }
+    .dynamic-switch {
+      width: 46px; height: 26px; border-radius: 13px; background: var(--line);
+      position: relative; transition: background .2s ease; flex: 0 0 auto;
+    }
+    .dynamic-switch::after {
+      content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px;
+      border-radius: 50%; background: var(--text); transition: transform .2s ease;
+    }
+    .dynamic-toggle input:checked + .dynamic-switch { background: var(--accent); }
+    .dynamic-toggle input:checked + .dynamic-switch::after { transform: translateX(20px); background: #fff; }
+    .dynamic-toggle input:focus-visible + .dynamic-switch { outline: 2px solid var(--accent); outline-offset: 3px; }
+    .zen-exit {
+      display: none; position: fixed; z-index: 80;
+      top: max(16px, env(safe-area-inset-top, 0px)); right: 16px;
+      background: var(--panel); opacity: .85;
+    }
+    .zen-exit:hover { opacity: 1; }
+    .shell.is-zen .zen-exit { display: inline-flex; }
+    .segmented { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s-1); background: var(--panel-raised); border: 1px solid var(--line); border-radius: var(--r-s); padding: var(--s-1); }
+    .segmented button { background: transparent; border: 0; color: var(--muted); padding: 10px 8px; border-radius: var(--r-s); cursor: pointer; font-size: 13px; transition: background .18s, color .18s; }
+    .segmented button:hover { color: var(--text); }
+    .segmented button[aria-checked="true"] { background: var(--bg); color: var(--accent); box-shadow: 0 1px 3px rgba(0,0,0,.15); }
+    .segmented.fonts button.font-sans { font-family: var(--sans); }
+    .segmented.fonts button.font-serif { font-family: var(--serif); }
+    .segmented.fonts button.font-mono { font-family: var(--mono); font-size: 12px; }
+
+    .chunk-options { display: inline-flex; gap: var(--s-1); }
+    .chunk-button {
+      width: 44px; height: 44px; padding: 0; border: 1px solid var(--line); border-radius: var(--r-s);
+      background: transparent; color: var(--muted); font-size: 13px; cursor: pointer;
+      transition: background .18s, border-color .18s, color .18s;
+    }
+    .chunk-button:hover { border-color: var(--subtle); color: var(--text); }
+    .chunk-button[aria-checked="true"] {
+      border-color: var(--accent); color: var(--accent); background: var(--accent-soft);
+      font-weight: 600;
+    }
+
+    .bookmark-list { display: flex; flex-direction: column; gap: var(--s-2); }
+    .bookmark-item {
+      display: flex; align-items: center; gap: 10px; padding: 10px 12px; width: 100%;
+      background: var(--panel-raised); border: 1px solid var(--line); border-radius: var(--r-s);
+      cursor: pointer; transition: background .15s, border-color .15s; text-align: left;
+    }
+    .bookmark-item:hover { background: var(--bg); border-color: var(--subtle); }
+    .bookmark-key {
+      width: 26px; height: 26px; border-radius: var(--r-s); background: var(--bg); border: 1px solid var(--line);
+      display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600;
+      color: var(--accent); flex: 0 0 auto;
+    }
+    .bookmark-text { font-size: 13px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+    .bookmark-empty { font-size: 12px; color: var(--subtle); font-style: italic; }
+
+    .modal-overlay { position: fixed; inset: 0; background: var(--overlay); z-index: 200; display: none; align-items: center; justify-content: center; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+    .modal-overlay.is-open { display: flex; }
+    .modal-card {
+      background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-l);
+      padding: var(--s-6); max-width: 480px; width: calc(100% - 48px); text-align: center;
+      box-shadow: 0 20px 60px rgba(0,0,0,.35);
+    }
+    .modal-title { font-family: var(--serif); font-size: 26px; margin: 0 0 var(--s-3); }
+    .modal-text { font-size: 14px; color: var(--muted); line-height: 1.6; margin: 0 0 var(--s-5); }
+    .modal-actions { display: flex; gap: var(--s-2); justify-content: center; flex-wrap: wrap; }
+    .modal-button {
+      min-height: 44px; padding: 0 var(--s-4); border-radius: var(--r-s); border: 1px solid var(--line);
+      background: var(--panel-raised); color: var(--text); cursor: pointer; font-size: 14px;
+      transition: background .18s, border-color .18s, transform .15s;
+    }
+    .modal-button:hover { background: var(--bg); border-color: var(--subtle); }
+    .modal-button.primary { background: var(--accent); border-color: var(--accent); color: white; }
+    .modal-button.primary:hover { background: color-mix(in srgb, var(--accent) 90%, white); }
+    .zen-hint {
+      position: fixed; inset: auto 0 0 0; z-index: 70; padding: var(--s-4);
+      display: flex; justify-content: center; pointer-events: none;
+      opacity: 0; transform: translateY(12px); transition: opacity .3s ease, transform .3s ease;
+    }
+    .zen-hint.is-visible { opacity: 1; transform: translateY(0); }
+    .zen-hint-box {
+      background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-m);
+      padding: var(--s-3) var(--s-4); font-size: 12px; color: var(--muted);
+      display: flex; gap: var(--s-4); align-items: center;
+      box-shadow: 0 8px 30px rgba(0,0,0,.25);
+    }
+    .zen-hint-item { display: flex; align-items: center; gap: var(--s-2); }
+    .zen-hint-key { font-size: 14px; }
+    .finished-stats { display: flex; gap: var(--s-5); justify-content: center; margin: var(--s-4) 0 var(--s-5); }
+    .finished-stat { text-align: center; }
+    .finished-stat-value { font-family: var(--serif); font-size: 28px; color: var(--accent); }
+    .finished-stat-label { font-size: 11px; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; margin-top: var(--s-1); }
+
+    @media (max-width: 700px) {
+      .shell { width: min(100% - 24px, 560px); }
+      .topbar { height: calc(64px + env(safe-area-inset-top, 0px)); }
+      .brand-note { display: none; }
+      .reader { min-height: 300px; padding-top: 42px; }
+      .reader-meta { top: 19px; font-size: 10px; }
+      .word-stage { min-height: 140px; }
+      .focus-guide { height: 120px; }
+      .controls-panel { padding: var(--s-3) var(--s-4); border-radius: var(--r-m); }
+      .play-button { width: 150px; height: 58px; font-size: 14px; border-radius: var(--r-s); }
+      .nav-button { width: 44px; height: 44px; border-radius: var(--r-s); }
+      .library { padding: var(--s-3); flex-direction: column; align-items: stretch; gap: var(--s-3); }
+      .library-actions { width: 100%; }
+      .library-actions .action-button { padding: 0 10px; font-size: 12px; min-height: 44px; }
+      .editor { padding: var(--s-3); }
+      .editor-heading { flex-direction: column; align-items: flex-start; gap: var(--s-1); }
+      .editor-bottom { flex-direction: column; align-items: stretch; }
+      .editor-buttons { width: 100%; }
+      .editor-buttons .action-button { flex: 1; }
+      .keyboard-hint { display: none; }
+      .progress-area { padding-bottom: var(--s-3); }
+      footer { font-size: 9px; }
+      .sheet { padding: 8px 20px max(20px, env(safe-area-inset-bottom)); }
+      .sheet-row { padding: 10px 12px; }
+      .segmented button { padding: 9px 4px; font-size: 12px; }
+    }
+    @media (max-width: 380px) {
+      .shell { width: calc(100% - 16px); }
+      .brand-name { font-size: 17px; }
+      .play-button { width: 130px; padding: 0 16px; }
+      .nav-button { width: 44px; height: 44px; }
+      .top-actions { gap: var(--s-1); }
+      .icon-button, .quiet-button { width: 44px; min-height: 44px; }
+    }
+    .shell.is-zen { width: 100%; }
+    .shell.is-zen .topbar, .shell.is-zen .controls-panel, .shell.is-zen .library,
+    .shell.is-zen .editor, .shell.is-zen .message, .shell.is-zen footer { display: none; }
+    .shell.is-zen main { min-height: 100vh; min-height: 100dvh; }
+    .shell.is-zen .reader { min-height: 100vh; min-height: 100dvh; padding: 0 20px; cursor: pointer; }
+    .shell.is-zen .reader-meta, .shell.is-zen .focus-guide { display: none; }
+    .shell.is-zen .word-stage { width: min(100%, 1080px); min-height: 100vh; min-height: 100dvh; }
+    .shell.is-zen .progress-area { position: fixed; z-index: 7; top: 0; left: 0; right: 0; padding: 0; pointer-events: none; }
+    .shell.is-zen .progress-top { display: none; }
+    .shell.is-zen .progress-track { height: 2px; background: rgba(255,255,255,.05); }
+    .shell.is-zen .progress-fill { background: var(--accent); opacity: .7; }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
+    }
+
+    /* PWA: баннер установки */
+    [hidden] { display: none !important; }
+    .install-banner {
+      margin: 0 0 12px; padding: var(--s-3) var(--s-4);
+      background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-m);
+      display: flex; justify-content: space-between; align-items: center; gap: var(--s-3);
+    }
+    .install-banner-copy { min-width: 0; }
+    .install-banner-title { font-size: 14px; font-weight: 500; }
+    .install-banner-sub { font-size: 12px; color: var(--muted); margin-top: 2px; line-height: 1.4; }
+    .install-banner .action-button { flex: 0 0 auto; min-height: 38px; }
+    @media (max-width: 480px) {
+      .install-banner { flex-direction: column; align-items: stretch; }
+      .install-banner .action-button { width: 100%; }
+    }
+
+    /* ── Экспериментальный детектор внимания ── */
+    .camera-widget {
+      position: fixed; bottom: 20px; right: 20px; z-index: 150;
+      width: 100px; height: 100px; border-radius: var(--r-m); overflow: hidden;
+      border: 2px solid var(--line); background: #000; opacity: 0.7;
+      transition: opacity .25s ease, transform .25s ease;
+      box-shadow: 0 4px 18px rgba(0,0,0,.35);
+    }
+    .camera-widget video {
+      width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1);
+    }
+    .camera-status-dot {
+      position: absolute; top: 6px; right: 6px; width: 10px; height: 10px; border-radius: 50%;
+      background: #888; box-shadow: 0 0 0 2px rgba(0,0,0,.5);
+      transition: background .2s ease;
+    }
+    .camera-status-dot.is-active { background: #4caf50; }
+    .camera-status-dot.is-lost   { background: #f44336; }
+    .camera-hide-btn {
+      position: absolute; bottom: 4px; right: 4px; width: 20px; height: 20px;
+      border-radius: 50%; background: rgba(0,0,0,.65); color: #fff; border: none;
+      font-size: 14px; line-height: 1; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background .2s;
+    }
+    .camera-hide-btn:hover { background: rgba(0,0,0,.9); }
+    .shell.is-zen .camera-widget { opacity: 0.12; }
+    .shell.is-zen .camera-widget:hover { opacity: 0.6; }
+  </style>
+</head>
+<body class="theme-dark">
+  <div class="drop-overlay" id="dropOverlay">
+    <div class="drop-box">
+      <div class="drop-box-title">Отпустите файл</div>
+      <div class="drop-box-sub">Поддерживаются TXT и FB2</div>
+    </div>
+  </div>
+
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand" aria-label="Такт, чтение в своём ритме">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span class="brand-name">такт</span>
+        <span class="brand-note">чтение в своём ритме</span>
+      </div>
+      <div class="top-actions">
+        <button class="icon-button settings-button" id="settingsToggle" type="button" aria-label="Открыть настройки" aria-pressed="false" title="Настройки">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+        <button class="quiet-button zen-button" id="zenToggle" type="button" aria-label="Включить режим Зен" aria-pressed="false" title="Режим Зен">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg>
+        </button>
+      </div>
+    </header>
+    <main>
+      <section class="reader" id="readerArea" aria-label="Область чтения">
+        <div class="reader-meta">
+          <div class="reading-label"><span class="status-dot" id="statusDot"></span><span id="statusText">готово к чтению</span></div>
+          <div class="book-label" id="bookLabel">А. С. Пушкин · «Метель»</div>
+        </div>
+        <div class="focus-guide" aria-hidden="true"></div>
+        <div class="word-stage" id="wordStage" aria-live="off">
+          <span class="word-left" id="wordLeft"><span class="word-bionic" id="wordBionic"></span><span class="word-before" id="wordBefore"></span></span><span class="word-pivot" id="wordPivot"></span><span class="word-after" id="wordAfter"></span>
+        </div>
+      </section>
+      <section class="progress-area" aria-label="Прогресс чтения">
+        <div class="progress-top">
+          <span id="progressLabel">Слово 0 из 0</span>
+          <span class="wpm-badge" id="wpmBadge">320 слов/мин</span>
+          <strong id="percentLabel">0%</strong>
+        </div>
+        <div class="progress-track" id="progressBar" role="slider" tabindex="0" aria-label="Позиция в тексте, процентов" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <div class="progress-fill" id="progressFill"></div>
+        </div>
+      </section>
+      <section class="controls-panel" aria-label="Управление чтением">
+        <div class="transport-row">
+          <div class="transport-left">
+            <button class="nav-button" id="rewindButton" type="button" aria-label="Вернуться к началу предложения" title="Назад (←)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 20 9 12l10-8z"/><path d="M5 19V5"/></svg>
+            </button>
+            <button class="nav-button" id="restartButton" type="button" aria-label="В начало текста" title="В начало">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m11 19-7-7 7-7"/><path d="M20 19v-14"/></svg>
+            </button>
+          </div>
+          <button class="play-button" id="playButton" type="button">
+            <svg class="play-icon" id="playIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3.7c0-.7.8-1.1 1.4-.7l10 6.2c.6.4.6 1.2 0 1.6l-10 6.2c-.6.4-1.4 0-1.4-.7z"/></svg>
+            <span id="playLabel">Читать</span>
+          </button>
+          <div class="transport-right">
+            <div class="keyboard-hint"><kbd>Space</kbd> · пауза<br><kbd>←</kbd> · назад<br><kbd>1-5</kbd> · закладка · <kbd>Alt+1-5</kbd> · перейти</div>
+          </div>
+        </div>
+      </section>
+      <div class="message" id="message" role="status" aria-live="polite"></div>
+
+      <div class="install-banner" id="installBanner" hidden>
+        <div class="install-banner-copy">
+          <div class="install-banner-title">Установить «Такт»</div>
+          <div class="install-banner-sub">Работает офлайн · открывается в отдельном окне</div>
+        </div>
+        <button class="action-button apply-button" id="installButton" type="button">Установить</button>
+      </div>
+
+      <section class="library" aria-label="Текст для чтения">
+        <div class="library-copy">
+          <div class="library-title">Своя книга</div>
+          <div class="library-subtitle">Вставьте текст, откройте файл FB2/TXT или перетащите его на экран.</div>
+        </div>
+        <div class="library-actions">
+          <button class="action-button" id="editButton" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+            Добавить текст
+          </button>
+          <button class="action-button" id="fileButton" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M5 17v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2"/></svg>
+            Открыть файл
+          </button>
+          <button class="action-button reset-button danger" id="resetAll" type="button" title="Очистить сохранение и вернуть исходный текст">Сбросить всё</button>
+          <input class="file-input" id="filePicker" type="file" accept=".txt,.fb2">
+        </div>
+      </section>
+      <section class="editor" id="editor" aria-label="Редактирование текста">
+        <div class="editor-heading"><strong>Ваш текст</strong><span>Вставьте или отредактируйте фрагмент.</span></div>
+        <textarea id="textEditor" spellcheck="false" placeholder="Вставьте текст сюда…"></textarea>
+        <div class="editor-bottom">
+          <span class="library-subtitle">Применение начнёт чтение с первого слова.</span>
+          <div class="editor-buttons">
+            <button class="action-button" id="cancelEdit" type="button">Отмена</button>
+            <button class="action-button apply-button" id="applyText" type="button">Применить</button>
+          </div>
+        </div>
+      </section>
+    </main>
+    <footer><span>Такт · чтение без отвлечений</span><span>Всё остаётся на этом устройстве</span></footer>
+    <button class="icon-button zen-exit" id="zenExit" type="button" aria-label="Выйти из режима Зен" title="Выйти из режима Зен">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
+
+  <!-- Окно камеры (скрыто по умолчанию) -->
+  <div class="camera-widget" id="cameraWidget" hidden>
+    <video id="cameraVideo" autoplay playsinline muted></video>
+    <span class="camera-status-dot" id="cameraStatusDot"></span>
+    <button class="camera-hide-btn" id="cameraHideBtn" type="button" aria-label="Скрыть камеру">×</button>
+  </div>
+
+  <div class="sheet-overlay" id="sheetOverlay"></div>
+  <aside class="sheet" id="settingsSheet" aria-label="Настройки" role="dialog" aria-modal="true">
+    <div class="sheet-handle"></div>
+    <div class="sheet-header">
+      <div class="sheet-title">Настройки</div>
+      <button class="sheet-close" id="sheetClose" type="button" aria-label="Закрыть настройки">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="sheet-section">
+      <div class="sheet-label">Темп чтения</div>
+      <div class="sheet-row">
+        <span class="sheet-row-label">Скорость, слов в минуту</span>
+        <span class="sheet-value" id="speedValue">320</span>
+      </div>
+      <input class="sheet-slider" id="speedSlider" type="range" min="100" max="800" step="10" value="320" aria-label="Скорость чтения, слов в минуту">
+      <div class="sheet-row" style="margin-top: var(--s-3);">
+        <span class="sheet-row-label">Слов в блоке</span>
+        <div class="chunk-options" role="radiogroup" aria-label="Количество слов в блоке">
+          <button class="chunk-button" type="button" role="radio" data-chunk-words="1" aria-checked="true">1</button>
+          <button class="chunk-button" type="button" role="radio" data-chunk-words="2" aria-checked="false">2</button>
+          <button class="chunk-button" type="button" role="radio" data-chunk-words="3" aria-checked="false">3</button>
+        </div>
+      </div>
+      <div class="sheet-row">
+        <span class="sheet-row-label">Живой темп<small>Адаптирует паузы к длине слов</small></span>
+        <label class="dynamic-toggle"><input type="checkbox" id="dynamicToggle" aria-label="Живой темп"><span class="dynamic-switch"></span></label>
+      </div>
+    </div>
+    <div class="sheet-section">
+      <div class="sheet-label">Размер шрифта</div>
+      <div class="sheet-row">
+        <span class="sheet-row-label">Шрифт в области чтения</span>
+        <span class="sheet-value" id="fontSizeValue">48px</span>
+      </div>
+      <input class="sheet-slider" id="fontSizeSlider" type="range" min="24" max="72" step="2" value="48" aria-label="Размер шрифта, пиксели">
+    </div>
+    <div class="sheet-section">
+      <div class="sheet-label">Семейство шрифта</div>
+      <div class="segmented fonts" role="radiogroup" aria-label="Семейство шрифта">
+        <button type="button" class="font-sans" role="radio" data-font="sans" aria-checked="true">Sans</button>
+        <button type="button" class="font-serif" role="radio" data-font="serif" aria-checked="false">Serif</button>
+        <button type="button" class="font-mono" role="radio" data-font="mono" aria-checked="false">Mono</button>
+      </div>
+    </div>
+    <div class="sheet-section">
+      <div class="sheet-label">Режимы чтения</div>
+      <div class="sheet-row">
+        <span class="sheet-row-label">Бионическое чтение<small>Жирное начало слова ускоряет восприятие</small></span>
+        <label class="dynamic-toggle"><input type="checkbox" id="bionicToggle" aria-label="Бионическое чтение"><span class="dynamic-switch"></span></label>
+      </div>
+    </div>
+
+    <!-- Экспериментальный детектор внимания -->
+    <div class="sheet-section">
+      <div class="sheet-label">Экспериментально</div>
+      <div class="sheet-row">
+        <span class="sheet-row-label">Отслеживание взгляда (камера)<small>Пауза, когда лицо не в кадре</small></span>
+        <label class="dynamic-toggle">
+          <input type="checkbox" id="faceTrackingToggle" aria-label="Отслеживание взгляда">
+          <span class="dynamic-switch"></span>
+        </label>
+      </div>
+    </div>
+
+    <div class="sheet-section">
+      <div class="sheet-label">Закладки</div>
+      <div class="bookmark-list" id="bookmarkList"></div>
+    </div>
+    <div class="sheet-section">
+      <div class="sheet-label">Цветовая тема</div>
+      <div class="segmented" role="radiogroup" aria-label="Цветовая тема">
+        <button type="button" role="radio" data-theme="dark" aria-checked="true">Тёмная</button>
+        <button type="button" role="radio" data-theme="sepia" aria-checked="false">Сепия</button>
+        <button type="button" role="radio" data-theme="light" aria-checked="false">Светлая</button>
+      </div>
+    </div>
+    <div class="sheet-section">
+      <div class="sheet-label">Акцент</div>
+      <div class="segmented" role="radiogroup" aria-label="Акцентный цвет">
+        <button type="button" role="radio" data-accent="red" aria-checked="true">Красный</button>
+        <button type="button" role="radio" data-accent="amber" aria-checked="false">Янтарный</button>
+        <button type="button" role="radio" data-accent="blue" aria-checked="false">Синий</button>
+      </div>
+    </div>
+  </aside>
+
+  <div class="modal-overlay" id="onboardingOverlay">
+    <div class="modal-card">
+      <div class="modal-title">Добро пожаловать в «Такт»</div>
+      <div class="modal-text">
+        Это RSVP-читалка: слова появляются по одному в точке фокуса, чтобы вы читали быстрее и без отвлечений.<br><br>
+        Нажмите <b>Пробел</b> для старта, <b>←</b> — назад к началу предложения, цифры <b>1–5</b> — поставить закладку, <b>Alt+1–5</b> — перейти к ней. В режиме «Зен»: тап — пауза, свайпы — навигация.
+      </div>
+      <div class="modal-actions">
+        <button class="modal-button primary" id="onboardingDone" type="button">Начать чтение</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="zen-hint" id="zenHint">
+    <div class="zen-hint-box">
+      <span class="zen-hint-item"><span class="zen-hint-key">⏺</span> тап — пауза</span>
+      <span class="zen-hint-item"><span class="zen-hint-key">←</span><span class="zen-hint-key">→</span> свайп — назад/вперёд</span>
+      <span class="zen-hint-item"><span class="zen-hint-key">✕</span> — выход</span>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="finishedOverlay">
+    <div class="modal-card">
+      <div class="modal-title">Готово</div>
+      <div class="modal-text">Вы дочитали этот текст до конца.</div>
+      <div class="finished-stats">
+        <div class="finished-stat">
+          <div class="finished-stat-value" id="finishedWords">0</div>
+          <div class="finished-stat-label">слов</div>
+        </div>
+        <div class="finished-stat">
+          <div class="finished-stat-value" id="finishedWpm">0</div>
+          <div class="finished-stat-label">слов/мин</div>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="modal-button" id="finishedRestart" type="button">Начать заново</button>
+        <button class="modal-button primary" id="finishedClose" type="button">Закрыть</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      "use strict";
+      const STORAGE_KEY = "readerState";
+      const UI_KEY = "readerUI";
+      const DEMO_TEXT = "В конце 1811 года, в эпоху нам памятную, жил в своем поместье Ненарадове добрый Гаврила Гаврилович Р**. Он славился гостеприимством во всей округе; соседи поминутно ездили к нему поесть, попить и поиграть в бостон с его женой. Дочь его, Марья Гавриловна, была воспитана на французских романах и, следовательно, была влюблена. Предмет, избранный ею, был бедный армейский прапорщик, находившийся в отпуску в своей деревне. Разумеется, молодой человек пылал равною страстью, и родители его возлюбленной, заметив их взаимную склонность, запретили дочери о нем и думать. Но любовь молодых людей не была от того менее сильна.";
+      const $ = (id) => document.getElementById(id);
+      const els = {
+        left: $("wordLeft"), before: $("wordBefore"), pivot: $("wordPivot"), after: $("wordAfter"), stage: $("wordStage"),
+        bionic: $("wordBionic"),
+        progressLabel: $("progressLabel"), percentLabel: $("percentLabel"), progressBar: $("progressBar"),
+        progressFill: $("progressFill"), wpmBadge: $("wpmBadge"),
+        slider: $("speedSlider"), speedValue: $("speedValue"),
+        play: $("playButton"), playIcon: $("playIcon"), playLabel: $("playLabel"),
+        rewind: $("rewindButton"), dynamic: $("dynamicToggle"), restart: $("restartButton"),
+        dot: $("statusDot"), status: $("statusText"),
+        message: $("message"), editor: $("editor"), textarea: $("textEditor"),
+        picker: $("filePicker"), book: $("bookLabel"),
+        shell: document.querySelector(".shell"), reader: $("readerArea"),
+        zen: $("zenToggle"), settings: $("settingsToggle"), sheet: $("settingsSheet"),
+        overlay: $("sheetOverlay"), sheetClose: $("sheetClose"),
+        fontSizeSlider: $("fontSizeSlider"), fontSizeValue: $("fontSizeValue"),
+        bionicToggle: $("bionicToggle"), bookmarkList: $("bookmarkList"),
+        dropOverlay: $("dropOverlay"),
+        onboardingOverlay: $("onboardingOverlay"), onboardingDone: $("onboardingDone"),
+        zenHint: $("zenHint"),
+        finishedOverlay: $("finishedOverlay"), finishedWords: $("finishedWords"),
+        finishedWpm: $("finishedWpm"), finishedRestart: $("finishedRestart"), finishedClose: $("finishedClose"),
+        zenExit: $("zenExit")
+      };
+      let words = [];
+      let index = 0;
+      let wpm = 320;
+      let chunkWords = 1;
+      let currentChunkSize = 1;
+      let playing = false;
+      let finished = false;
+      let zenMode = false;
+      let dynamicSpeed = false;
+      let timer = null;
+      let currentTitle = "А. С. Пушкин · «Метель»";
+      let savedTimer = null;
+      let canPersistCurrentText = true;
+      let bookmarks = [null, null, null, null, null];
+      let wordsRead = 0;
+      let readingMs = 0;
+      let lastTickAt = 0;
+      let lastSavedIndex = -1;
+      let ui = { theme: "dark", fontSize: 48, fontFamily: "sans", bionic: false, accent: "red", zenHintShown: false, faceTracking: false };
+      const FONT_MAP = {
+        sans: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+        serif: '"Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif',
+        mono: '"SF Mono", "JetBrains Mono", Consolas, Menlo, monospace'
+      };
+      const ACCENTS = {
+        red:   { accent: "#e75248", dim: "#74342f", soft: "rgba(231,82,72,.13)", focus: "rgba(231,82,72,.22)", focusStrong: "rgba(231,82,72,.55)" },
+        amber: { accent: "#d97706", dim: "#7a4a06", soft: "rgba(217,119,6,.13)", focus: "rgba(217,119,6,.22)", focusStrong: "rgba(217,119,6,.55)" },
+        blue:  { accent: "#3b82f6", dim: "#1e40af", soft: "rgba(59,130,246,.13)", focus: "rgba(59,130,246,.22)", focusStrong: "rgba(59,130,246,.55)" }
+      };
+      const MAX_BLOCK_CHARACTERS = 28;
+      const NON_BREAKING_WORDS = new Set(["а","и","но","да","или","либо","ли","в","во","на","над","о","об","обо","по","за","с","со","к","ко","у","от","до","из","изо","под","при","для","без","через","между","перед","после","около","про","как","что","если","чтобы","когда","пока","потому","хотя"]);
+      const ABBREVIATIONS = new Set(["г-н","г-жа","г-ца","т.е","т.н","т.к","т.д","т.п","др","проф","акад","рис","прим","стр","ул","пер","д","кв","тов","гр","млн","млрд","тыс","руб","коп","см","мм","км","кг","г","л","м","с","ч","мин","сек","mr","mrs","dr","prof","vs","etc","inc","ltd","corp","jr","sr","st","fig","vol","no","ed","rev","approx","dept","est","govt"]);
+
+      // ── Переменные детектора внимания ──
+      let faceDetector = null;
+      let cameraStream = null;
+      let detectionInterval = null;
+      let lastFaceDetectedTime = 0;
+      let autoPaused = false;
+      const faceTrackingToggle = $("faceTrackingToggle");
+      const cameraWidget = $("cameraWidget");
+      const cameraVideo = $("cameraVideo");
+      const cameraStatusDot = $("cameraStatusDot");
+      const cameraHideBtn = $("cameraHideBtn");
+
+      function isAbbreviation(word) {
+        const clean = word.replace(/[^а-яёa-z.\-]/gi, "").toLowerCase();
+        if (!clean) return false;
+        if (ABBREVIATIONS.has(clean) || ABBREVIATIONS.has(clean.replace(/\.$/, ""))) return true;
+        if (/^[а-яёa-z]\.$/i.test(clean)) return true;
+        if (/^\.{2,}$/.test(clean)) return true;
+        return false;
+      }
+      function isSentenceEnd(word) {
+        if (/…["»”')\]]*$/.test(word)) return true;
+        if (/\.{3,}["»”')\]]*$/.test(word)) return true;
+        if (/[!?]["»”')\]]*$/.test(word) || /[!?]$/.test(word)) return true;
+        if (/[.]["»”')\]]*$/.test(word) || /[.]$/.test(word)) {
+          if (isAbbreviation(word)) return false;
+          return true;
+        }
+        return false;
+      }
+      function saveBookmark(slot) {
+        if (slot < 0 || slot > 4 || words.length === 0) return;
+        bookmarks[slot] = index;
+        saveState();
+        renderBookmarks();
+        showMessage("Закладка " + (slot + 1) + " установлена.", "success");
+      }
+      function jumpToBookmark(slot) {
+        if (slot < 0 || slot > 4) return;
+        const idx = bookmarks[slot];
+        if (idx === null || idx === undefined || idx >= words.length) {
+          showMessage("Закладка " + (slot + 1) + " не установлена.", "warning");
+          return;
+        }
+        index = idx;
+        finished = false;
+        if (playing) { if (timer !== null) window.clearTimeout(timer); timer = window.setTimeout(tick, delayForCurrentChunk()); }
+        render();
+        saveState();
+        toggleSheet(false);
+        showMessage("Переход к закладке " + (slot + 1) + ".", "success");
+      }
+      function renderBookmarks() {
+        if (!els.bookmarkList) return;
+        els.bookmarkList.innerHTML = "";
+        for (let i = 0; i < 5; i++) {
+          const item = document.createElement("button");
+          item.type = "button";
+          item.className = "bookmark-item";
+          const keySpan = document.createElement("span");
+          keySpan.className = "bookmark-key";
+          keySpan.textContent = String(i + 1);
+          const textSpan = document.createElement("span");
+          if (bookmarks[i] !== null && bookmarks[i] !== undefined && bookmarks[i] < words.length) {
+            textSpan.className = "bookmark-text";
+            const ctx = words.slice(Math.max(0, bookmarks[i] - 2), bookmarks[i] + 5).join(" ");
+            textSpan.textContent = ctx + (bookmarks[i] + 5 < words.length ? "…" : "");
+          } else {
+            textSpan.className = "bookmark-text bookmark-empty";
+            textSpan.textContent = "Пусто — нажмите цифру " + (i + 1) + " при чтении";
+          }
+          item.append(keySpan, textSpan);
+          item.addEventListener("click", () => jumpToBookmark(i));
+          item.addEventListener("keydown", (e) => { if (e.key === " " || e.key === "Enter") e.stopPropagation(); });
+          els.bookmarkList.appendChild(item);
+        }
+      }
+      let dragCounter = 0;
+      document.addEventListener("dragenter", (e) => { e.preventDefault(); dragCounter++; if (els.dropOverlay) els.dropOverlay.classList.add("is-active"); });
+      document.addEventListener("dragleave", (e) => { e.preventDefault(); dragCounter--; if (dragCounter <= 0) { dragCounter = 0; if (els.dropOverlay) els.dropOverlay.classList.remove("is-active"); } });
+      document.addEventListener("dragover", (e) => e.preventDefault());
+      document.addEventListener("drop", (e) => {
+        e.preventDefault();
+        dragCounter = 0;
+        if (els.dropOverlay) els.dropOverlay.classList.remove("is-active");
+        const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (file) readFile(file);
+      });
+      let touchStartX = 0;
+      let touchStartY = 0;
+      els.reader.addEventListener("touchstart", (e) => {
+        if (!zenMode) return;
+        const t = e.touches[0];
+        touchStartX = t.clientX;
+        touchStartY = t.clientY;
+      }, { passive: true });
+      els.reader.addEventListener("touchend", (e) => {
+        if (!zenMode) return;
+        const t = e.changedTouches[0];
+        const dx = t.clientX - touchStartX;
+        const dy = t.clientY - touchStartY;
+        if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+          e.preventDefault();
+          if (dx < 0) {
+            const adv = Math.max(1, currentChunkSize || getChunkSize(index));
+            if (index + adv < words.length) { index += adv; render(); persistProgress(false); if (playing) { if (timer !== null) window.clearTimeout(timer); timer = window.setTimeout(tick, delayForCurrentChunk()); lastTickAt = performance.now(); } }
+          } else { rewindToSentenceStart(); }
+        } else if (Math.abs(dx) < 12 && Math.abs(dy) < 12) {
+          e.preventDefault();
+          togglePlayback();
+        }
+      }, { passive: false });
+      function showMessage(text, kind = "") {
+        els.message.textContent = text;
+        els.message.className = "message" + (kind ? " " + kind : "");
+        if (text && kind === "success") {
+          window.clearTimeout(savedTimer);
+          savedTimer = window.setTimeout(() => { els.message.textContent = ""; els.message.className = "message"; }, 4500);
+        }
+      }
+      function applyTheme(theme) {
+        if (!["dark", "sepia", "light"].includes(theme)) theme = "dark";
+        document.body.classList.remove("theme-dark", "theme-sepia", "theme-light");
+        document.body.classList.add("theme-" + theme);
+        document.documentElement.style.colorScheme = theme === "dark" ? "dark" : "light";
+        document.querySelector('meta[name="theme-color"]').setAttribute("content", theme === "dark" ? "#101111" : (theme === "sepia" ? "#efe6d0" : "#f7f5ee"));
+        ui.theme = theme;
+        document.querySelectorAll("[data-theme]").forEach((btn) => btn.setAttribute("aria-checked", String(btn.dataset.theme === theme)));
+        saveUI();
+      }
+      function applyAccent(name) {
+        if (!ACCENTS[name]) name = "red";
+        const a = ACCENTS[name];
+        const root = document.documentElement;
+        root.style.setProperty("--accent", a.accent);
+        root.style.setProperty("--accent-dim", a.dim);
+        root.style.setProperty("--accent-soft", a.soft);
+        root.style.setProperty("--focus-mark", a.focus);
+        root.style.setProperty("--focus-mark-strong", a.focusStrong);
+        ui.accent = name;
+        document.querySelectorAll("[data-accent]").forEach((btn) => btn.setAttribute("aria-checked", String(btn.dataset.accent === name)));
+        saveUI();
+      }
+      function applyFontFamily(family) {
+        if (!FONT_MAP[family]) family = "sans";
+        document.documentElement.style.setProperty("--reading-font", FONT_MAP[family]);
+        ui.fontFamily = family;
+        document.querySelectorAll("[data-font]").forEach((btn) => btn.setAttribute("aria-checked", String(btn.dataset.font === family)));
+        saveUI();
+      }
+      function applyFontSize(size) {
+        size = Math.max(24, Math.min(72, Math.round(Number(size) || 48)));
+        document.documentElement.style.setProperty("--reading-size", size + "px");
+        ui.fontSize = size;
+        els.fontSizeSlider.value = String(size);
+        els.fontSizeValue.textContent = size + "px";
+        saveUI();
+      }
+      function applyBionic(enabled) {
+        ui.bionic = !!enabled;
+        els.bionicToggle.checked = ui.bionic;
+        render();
+        saveUI();
+      }
+      function applyWpm(value) {
+        wpm = Math.max(100, Math.min(800, Math.round(Number(value) || 320)));
+        els.slider.value = String(wpm);
+        els.speedValue.textContent = String(wpm);
+        els.wpmBadge.textContent = wpm + " слов/мин";
+        saveState();
+        if (playing) { if (timer !== null) window.clearTimeout(timer); timer = window.setTimeout(tick, delayForCurrentChunk()); }
+      }
+      function saveUI() { try { localStorage.setItem(UI_KEY, JSON.stringify(ui)); } catch (_) {} }
+      function loadUI() {
+        try {
+          const raw = localStorage.getItem(UI_KEY);
+          if (!raw) return;
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === "object") {
+            if (["dark", "sepia", "light"].includes(parsed.theme)) ui.theme = parsed.theme;
+            if (["sans", "serif", "mono"].includes(parsed.fontFamily)) ui.fontFamily = parsed.fontFamily;
+            if (Number.isFinite(parsed.fontSize)) ui.fontSize = parsed.fontSize;
+            if (typeof parsed.bionic === "boolean") ui.bionic = parsed.bionic;
+            if (["red", "amber", "blue"].includes(parsed.accent)) ui.accent = parsed.accent;
+            if (typeof parsed.zenHintShown === "boolean") ui.zenHintShown = parsed.zenHintShown;
+            if (typeof parsed.faceTracking === "boolean") ui.faceTracking = parsed.faceTracking;
+          }
+        } catch (_) {}
+      }
+      function applyUI() { applyTheme(ui.theme); applyAccent(ui.accent); applyFontFamily(ui.fontFamily); applyFontSize(ui.fontSize); applyBionic(ui.bionic); }
+      function toggleSheet(forceOpen) {
+        const shouldOpen = typeof forceOpen === "boolean" ? forceOpen : !els.sheet.classList.contains("is-open");
+        const wasOpen = els.sheet.classList.contains("is-open");
+        els.sheet.classList.toggle("is-open", shouldOpen);
+        els.overlay.classList.toggle("is-open", shouldOpen);
+        els.settings.setAttribute("aria-pressed", String(shouldOpen));
+        els.settings.classList.toggle("is-open", shouldOpen);
+        if (shouldOpen) { renderBookmarks(); setTimeout(() => els.sheetClose.focus(), 300); }
+        else if (wasOpen) { els.settings.focus(); }
+      }
+      els.sheet.addEventListener("keydown", (e) => {
+        if (e.key !== "Tab") return;
+        const focusable = Array.from(els.sheet.querySelectorAll("button, input, [tabindex]")).filter((el) => !el.disabled && el.offsetParent !== null);
+        if (!focusable.length) return;
+        const first = focusable[0], last = focusable[focusable.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      });
+      function showOnboarding() {
+        try { if (localStorage.getItem("readerOnboarded")) return; } catch (_) {}
+        if (els.onboardingOverlay) { els.onboardingOverlay.classList.add("is-open"); setTimeout(() => els.onboardingDone.focus(), 60); }
+      }
+      function hideOnboarding() {
+        if (els.onboardingOverlay) els.onboardingOverlay.classList.remove("is-open");
+        try { localStorage.setItem("readerOnboarded", "1"); } catch (_) {}
+      }
+      function showZenHint() {
+        if (ui.zenHintShown || !els.zenHint) return;
+        ui.zenHintShown = true;
+        saveUI();
+        els.zenHint.classList.add("is-visible");
+        window.setTimeout(() => els.zenHint.classList.remove("is-visible"), 3000);
+      }
+      function showFinishedScreen() {
+        if (!els.finishedOverlay) return;
+        els.finishedWords.textContent = String(wordsRead || words.length);
+        const elapsedMin = readingMs / 60000;
+        const avgWpm = (elapsedMin > 0.05 && wordsRead > 0) ? Math.round(wordsRead / elapsedMin) : wpm;
+        els.finishedWpm.textContent = String(avgWpm);
+        els.finishedOverlay.classList.add("is-open");
+        setTimeout(() => els.finishedClose.focus(), 60);
+      }
+      function hideFinishedScreen() {
+        if (els.finishedOverlay) els.finishedOverlay.classList.remove("is-open");
+      }
+      function getBionicLength(word) {
+        const len = word.replace(/[^а-яёa-z0-9]/gi, "").length;
+        if (len <= 1) return len;
+        if (len <= 3) return 1;
+        if (len <= 5) return 2;
+        if (len <= 7) return 3;
+        if (len <= 9) return 4;
+        if (len <= 12) return 5;
+        return Math.min(7, Math.ceil(len * 0.4));
+      }
+      function updateChunkButtons() {
+        document.querySelectorAll("[data-chunk-words]").forEach((button) => {
+          button.setAttribute("aria-checked", String(Number(button.dataset.chunkWords) === chunkWords));
+        });
+      }
+      function updateDynamicUI() { els.dynamic.checked = dynamicSpeed; }
+      function setZenMode(enabled) {
+        zenMode = Boolean(enabled);
+        els.shell.classList.toggle("is-zen", zenMode);
+        els.zen.setAttribute("aria-pressed", String(zenMode));
+        els.zen.setAttribute("aria-label", zenMode ? "Выйти из режима Зен" : "Включить режим Зен");
+        render();
+        if (zenMode) showZenHint();
+      }
+      function isNonBreakingWord(word) {
+        const normalized = word.replace(/^[^а-яёa-z]+|[^а-яёa-z]+$/gi, "").toLocaleLowerCase("ru");
+        return NON_BREAKING_WORDS.has(normalized);
+      }
+      function getChunkSize(startAt = index) {
+        const remaining = words.length - startAt;
+        if (remaining <= 0) return 0;
+        let count = 0, characters = 0;
+        const requested = Math.min(chunkWords, remaining);
+        while (count < requested) {
+          const nextWord = words[startAt + count];
+          const nextLength = characters + (count ? 1 : 0) + nextWord.length;
+          if (count > 0 && nextLength > MAX_BLOCK_CHARACTERS) break;
+          characters = nextLength; count += 1;
+        }
+        if (!count) count = 1;
+        while (count > 1 && isNonBreakingWord(words[startAt + count - 1])) count -= 1;
+        if (isNonBreakingWord(words[startAt])) {
+          count = Math.max(count, Math.min(2, remaining));
+          while (count < Math.min(3, remaining) && isNonBreakingWord(words[startAt + count - 1])) count += 1;
+        }
+        return Math.min(count, remaining);
+      }
+      function persistProgress(force) {
+        if (!force && Math.abs(index - lastSavedIndex) < 10) return;
+        if (saveState()) lastSavedIndex = index;
+      }
+      function saveState() {
+        if (!canPersistCurrentText) return false;
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify({
+            text: words.join(" "), index, wpm, chunkWords, dynamicSpeed: !!dynamicSpeed, bookmarks
+          }));
+          return true;
+        } catch (_) { return false; }
+      }
+      function normalizeText(text) { return String(text || "").replace(/\uFEFF/g, "").replace(/\s+/g, " ").trim(); }
+      function tokenize(text) {
+        const raw = text ? text.split(/\s+/) : [];
+        const out = [];
+        let pending = "";
+        for (const token of raw) {
+          if (/[0-9а-яёa-z]/i.test(token)) { out.push(pending + token); pending = ""; }
+          else { pending = pending ? pending + token + " " : token + " "; }
+        }
+        if (pending.trim()) {
+          if (out.length) out[out.length - 1] += " " + pending.trim();
+          else out.push(pending.trim());
+        }
+        return out;
+      }
+      function getPhrasePivotIndex(phrase) {
+        const characters = Array.from(phrase);
+        const center = characters.length / 2;
+        let pivot = -1, nearestDistance = Infinity;
+        characters.forEach((character, position) => {
+          if (!/[а-яёa-z0-9]/i.test(character)) return;
+          const distance = Math.abs(position - center);
+          if (distance < nearestDistance) { pivot = position; nearestDistance = distance; }
+        });
+        if (pivot < 0) pivot = Math.max(0, Math.floor((characters.length - 1) / 2));
+        return characters.slice(0, pivot).join("").length;
+      }
+      function updateWord() {
+        const firstWord = words[index] || "";
+        if (!firstWord) {
+          currentChunkSize = 0;
+          els.stage.classList.add("is-empty"); els.stage.classList.remove("is-phrase"); els.stage.classList.remove("is-bionic");
+          els.stage.innerHTML = '<span class="empty-word">Загрузите текст,<br>чтобы начать читать</span>';
+          return;
+        }
+        currentChunkSize = getChunkSize(index);
+        const visibleWords = words.slice(index, index + currentChunkSize);
+        const displayText = visibleWords.join(" ");
+        els.stage.classList.remove("is-empty");
+        els.stage.classList.toggle("is-phrase", visibleWords.length > 1);
+        if (!els.stage.contains(els.left)) { els.stage.innerHTML = ""; els.stage.append(els.left, els.pivot, els.after); }
+        const point = visibleWords.length > 1 ? getPhrasePivotIndex(displayText) : Math.max(0, Math.min(firstWord.length - 1, Math.floor(firstWord.length / 3)));
+        const isBionic = ui.bionic && visibleWords.length === 1;
+        els.stage.classList.toggle("is-bionic", isBionic);
+        if (isBionic) {
+          const bionicLen = getBionicLength(firstWord);
+          const bionicEnd = Math.min(bionicLen, point);
+          els.bionic.textContent = displayText.slice(0, bionicEnd);
+          els.before.textContent = displayText.slice(bionicEnd, point);
+        } else {
+          els.bionic.textContent = "";
+          els.before.textContent = displayText.slice(0, point);
+        }
+        els.pivot.textContent = displayText.charAt(point);
+        els.after.textContent = displayText.slice(point + 1);
+        els.stage.classList.add("fade-out");
+        requestAnimationFrame(() => { requestAnimationFrame(() => { els.stage.classList.remove("fade-out"); }); });
+      }
+      function updateProgress() {
+        const total = words.length;
+        const firstVisible = total ? Math.min(index + 1, total) : 0;
+        const lastVisible = total ? Math.min(index + Math.max(1, currentChunkSize), total) : 0;
+        const pct = total ? Math.round(((finished ? total : lastVisible) / total) * 100) : 0;
+        els.progressLabel.textContent = firstVisible < lastVisible ? "Слова " + firstVisible + "–" + lastVisible + " из " + total : "Слово " + firstVisible + " из " + total;
+        els.percentLabel.textContent = pct + "%";
+        els.progressFill.style.width = pct + "%";
+        els.progressBar.setAttribute("aria-valuenow", String(pct));
+      }
+      function setReadingStatus() {
+        els.dot.classList.toggle("is-playing", playing);
+        els.status.textContent = playing ? "чтение" : (finished ? "текст прочитан" : "готово к чтению");
+        if (finished) { els.playLabel.textContent = "Прочитано"; }
+        else { els.playLabel.textContent = playing ? "Пауза" : "Читать"; }
+        els.playIcon.innerHTML = playing ? '<path d="M5 4h3.5v12H5zM11.5 4H15v12h-3.5z"/>' : '<path d="M5 3.7c0-.7.8-1.1 1.4-.7l10 6.2c.6.4.6 1.2 0 1.6l-10 6.2c-.6.4-1.4 0-1.4-.7z"/>';
+        els.play.disabled = finished;
+        els.play.style.opacity = els.play.disabled ? ".55" : "1";
+        els.play.style.cursor = els.play.disabled ? "default" : "pointer";
+        els.rewind.disabled = index === 0;
+      }
+      function render() { updateWord(); updateProgress(); setReadingStatus(); }
+      function setText(text, title, shouldSave = true) {
+        stopPlayback();
+        const normalized = normalizeText(text);
+        words = tokenize(normalized);
+        canPersistCurrentText = normalized.length <= 1000000;
+        index = 0; finished = false; bookmarks = [null, null, null, null, null];
+        wordsRead = 0; readingMs = 0; lastTickAt = 0; lastSavedIndex = -1;
+        if (title) currentTitle = title;
+        els.book.textContent = currentTitle;
+        render(); renderBookmarks();
+        return !shouldSave || saveState();
+      }
+      function baseDelay(word) {
+        const base = 60000 / wpm;
+        const cleanWord = word.replace(/[^а-яёa-z]/gi, "");
+        const syllables = (cleanWord.match(/[аеёиоуыэюяaeiouy]/gi) || []).length;
+        let wordFactor = 1;
+        if (cleanWord.length >= 13 || syllables >= 6) wordFactor = 1.18;
+        else if (cleanWord.length >= 9 || syllables >= 4) wordFactor = 1.1;
+        if (/[.!?…]["»”')\]]*$/.test(word)) return base * wordFactor * 1.8;
+        if (/[,;:—–]["»”')\]]*$/.test(word) || /[-—–]$/.test(word)) return base * wordFactor * 1.35;
+        return base * wordFactor;
+      }
+      function getDynamicFactor() {
+        if (!dynamicSpeed) return 1;
+        const count = getChunkSize(index);
+        if (count === 0) return 1;
+        let totalChars = 0, hasComplexPunctuation = false, allVeryShort = true;
+        for (let offset = 0; offset < count; offset++) {
+          const word = words[index + offset];
+          const clean = word.replace(/[^а-яёa-z0-9]/gi, "");
+          totalChars += clean.length;
+          if (clean.length > 5) allVeryShort = false;
+          if (/[;:—–]/.test(word) || /[.!?…]/.test(word)) hasComplexPunctuation = true;
+        }
+        if (totalChars >= 20 || hasComplexPunctuation) return 1.25;
+        if (totalChars <= 8 && allVeryShort && count <= 2) return 0.88;
+        return 1;
+      }
+      function delayForCurrentChunk() {
+        const count = getChunkSize(index);
+        let delay = 0;
+        for (let offset = 0; offset < count; offset += 1) delay += baseDelay(words[index + offset]);
+        return (delay || 60000 / wpm) * getDynamicFactor();
+      }
+      function tick() {
+        if (!playing) return;
+        const advanceBy = Math.max(1, currentChunkSize || getChunkSize(index));
+        if (index + advanceBy >= words.length) {
+          stopPlayback(); finished = true; render();
+          showMessage("Чтение завершено. Можно вернуться к началу.", "success");
+          showFinishedScreen();
+          return;
+        }
+        index += advanceBy;
+        wordsRead += advanceBy;
+        if (lastTickAt) { readingMs += performance.now() - lastTickAt; lastTickAt = performance.now(); }
+        render();
+        persistProgress(false);
+        timer = window.setTimeout(tick, delayForCurrentChunk());
+      }
+      function startPlayback() {
+        if (!words.length) { showMessage("Сначала добавьте текст для чтения.", "error"); return; }
+        if (finished) return;
+        lastTickAt = performance.now();
+        playing = true;
+        render();
+        timer = window.setTimeout(tick, delayForCurrentChunk());
+      }
+      function stopPlayback() { playing = false; lastTickAt = 0; if (timer !== null) window.clearTimeout(timer); timer = null; persistProgress(true); }
+      function togglePlayback() {
+        if (autoPaused) {
+          // Пользователь вручную вмешался — авто-пауза отменяется
+          autoPaused = false;
+        }
+        if (playing) { stopPlayback(); render(); } else startPlayback();
+      }
+      function rewindToSentenceStart() {
+        if (index === 0) return;
+        const atSentenceStart = (index === 0 || isSentenceEnd(words[index - 1]));
+        let newIdx = 0;
+        for (let i = index - 1; i >= 0; i--) {
+          if (isSentenceEnd(words[i])) {
+            newIdx = i + 1;
+            if (atSentenceStart) {
+              let foundEarlier = false;
+              for (let j = i - 1; j >= 0; j--) {
+                if (isSentenceEnd(words[j])) { newIdx = j + 1; foundEarlier = true; break; }
+              }
+              if (!foundEarlier) newIdx = 0;
+            }
+            break;
+          }
+        }
+        index = Math.max(0, Math.min(newIdx, words.length - 1));
+        finished = false;
+        if (playing) { if (timer !== null) window.clearTimeout(timer); timer = window.setTimeout(tick, delayForCurrentChunk()); }
+        render(); saveState();
+      }
+      function resetToStart() {
+        stopPlayback(); index = 0; finished = false; wordsRead = 0; readingMs = 0; lastTickAt = 0; render(); persistProgress(true);
+        showMessage("Чтение начинается с первого слова.", "success");
+      }
+      function openEditor() { stopPlayback(); els.textarea.value = words.join(" "); els.editor.classList.add("is-open"); els.textarea.focus(); render(); }
+      function closeEditor() { els.editor.classList.remove("is-open"); }
+      function parseFb2(buffer) {
+        const bytes = new Uint8Array(buffer);
+        const startsWith = (...values) => values.every((v, i) => bytes[i] === v);
+        let encoding = "";
+        if (startsWith(0xEF, 0xBB, 0xBF)) encoding = "utf-8";
+        else if (startsWith(0xFF, 0xFE)) encoding = "utf-16le";
+        else if (startsWith(0xFE, 0xFF)) encoding = "utf-16be";
+        else if (startsWith(0x3C, 0x00, 0x3F, 0x00)) encoding = "utf-16le";
+        else if (startsWith(0x00, 0x3C, 0x00, 0x3F)) encoding = "utf-16be";
+        let head = "";
+        try { head = new TextDecoder(encoding || "windows-1252").decode(bytes.slice(0, 1024)); }
+        catch (_) { head = new TextDecoder("utf-8").decode(bytes.slice(0, 1024)); }
+        const declared = head.match(/encoding\s*=\s*["']([^"']+)["']/i);
+        if (!encoding && declared) encoding = declared[1];
+        if (!encoding) encoding = "utf-8";
+        let decoded;
+        try { decoded = new TextDecoder(encoding).decode(bytes); }
+        catch (_) { decoded = new TextDecoder("utf-8").decode(bytes); }
+        if (decoded.includes("\uFFFD") && !/utf-16/i.test(encoding)) {
+          try { const cp1251 = new TextDecoder("windows-1251").decode(bytes); if (/<\s*(?:[\w.-]+:)?FictionBook\b/i.test(cp1251)) decoded = cp1251; } catch (_) {}
+        }
+        decoded = decoded.replace(/<((?:[\w.-]+:)?binary)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, "");
+        decoded = decoded.replace(/^\uFEFF/, "").trimStart().replace(/^<\?xml\b[\s\S]*?\?>\s*/i, "");
+        const doc = new DOMParser().parseFromString(decoded, "application/xml");
+        if (doc.querySelector("parsererror") || !doc.documentElement || doc.documentElement.localName === "parsererror") throw new Error("Не удалось прочитать FB2.");
+        if (doc.documentElement.localName.toLowerCase() !== "fictionbook") throw new Error("Файл не распознан как FB2.");
+        const bodies = Array.from(doc.getElementsByTagName("*")).filter((n) => n.localName.toLowerCase() === "body");
+        const body = bodies.find((n) => !n.getAttribute("name") || n.getAttribute("name").toLowerCase() === "main") || bodies[0];
+        if (!body) throw new Error("В файле FB2 не найден текст книги.");
+        const allowed = new Set(["p", "title", "subtitle", "epigraph", "cite", "poem", "v"]);
+        const candidates = Array.from(body.getElementsByTagName("*")).filter((n) => allowed.has(n.localName.toLowerCase()));
+        const chunks = [];
+        for (const node of candidates) {
+          const name = node.localName.toLowerCase();
+          if (name === "poem" && Array.from(node.getElementsByTagName("*")).some((c) => c.localName.toLowerCase() === "v")) continue;
+          let parent = node.parentElement, nested = false, insidePoem = false;
+          while (parent && parent !== body) {
+            if (parent.localName.toLowerCase() === "poem") insidePoem = true;
+            if (allowed.has(parent.localName.toLowerCase())) { nested = true; break; }
+            parent = parent.parentElement;
+          }
+          if (nested && !(name === "v" && insidePoem)) continue;
+          const value = normalizeText(node.textContent);
+          if (value) chunks.push(value);
+        }
+        const text = chunks.join("\n");
+        if (!normalizeText(text)) throw new Error("В файле FB2 не удалось найти текст.");
+        return text;
+      }
+      function decodeTextFile(buffer) {
+        const bytes = new Uint8Array(buffer);
+        let encoding = "utf-8";
+        if (bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) encoding = "utf-8";
+        else if (bytes[0] === 0xFF && bytes[1] === 0xFE) encoding = "utf-16le";
+        else if (bytes[0] === 0xFE && bytes[1] === 0xFF) encoding = "utf-16be";
+        let decoded;
+        try { decoded = new TextDecoder(encoding).decode(bytes); }
+        catch (_) { decoded = new TextDecoder("utf-8").decode(bytes); }
+        if (decoded.includes("\uFFFD") && encoding === "utf-8") {
+          try {
+            const cp1251 = new TextDecoder("windows-1251").decode(bytes);
+            const cyr = (s) => (s.match(/[а-яё]/gi) || []).length;
+            if (cyr(cp1251) > cyr(decoded)) decoded = cp1251;
+          } catch (_) {}
+        }
+        return decoded;
+      }
+      function readAsArrayBuffer(file) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => reader.result instanceof ArrayBuffer ? resolve(reader.result) : reject(new Error("Ошибка чтения."));
+          reader.onerror = () => reject(reader.error || new Error("Ошибка чтения."));
+          reader.readAsArrayBuffer(file);
+        });
+      }
+      async function readFile(file) {
+        if (!file) return;
+        stopPlayback();
+        const extension = file.name.toLowerCase().split(".").pop();
+        try {
+          const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+          showMessage("Открываю «" + file.name + "» (" + sizeMb + " МБ)…");
+          await new Promise((r) => window.setTimeout(r, 40));
+          let text;
+          if (extension === "txt") {
+            text = decodeTextFile(await readAsArrayBuffer(file)).replace(/^\uFEFF/, "");
+            if (!normalizeText(text)) throw new Error("Файл пуст.");
+          } else if (extension === "fb2") {
+            text = parseFb2(await readAsArrayBuffer(file));
+          } else {
+            throw new Error("Поддерживаются только файлы FB2 и TXT.");
+          }
+          const saved = setText(text, file.name);
+          closeEditor();
+          if (saved) showMessage("Текст загружен: " + file.name, "success");
+          else showMessage("Книга открыта, но не сохранена из-за размера.", "warning");
+        } catch (error) {
+          showMessage(error instanceof Error ? error.message : "Не удалось прочитать файл.", "error");
+        } finally { els.picker.value = ""; }
+      }
+      function restoreState() {
+        try {
+          const stored = localStorage.getItem(STORAGE_KEY);
+          if (!stored) return false;
+          const state = JSON.parse(stored);
+          if (!state || typeof state.text !== "string" || !Number.isFinite(state.wpm) || !Number.isFinite(state.index)) return false;
+          const normalized = normalizeText(state.text);
+          if (!normalized) return false;
+          words = tokenize(normalized);
+          canPersistCurrentText = normalized.length <= 1000000;
+          index = Math.max(0, Math.min(words.length - 1, Math.floor(state.index)));
+          wpm = Math.max(100, Math.min(800, Math.round(state.wpm / 10) * 10));
+          chunkWords = [1, 2, 3].includes(Number(state.chunkWords)) ? Number(state.chunkWords) : 1;
+          dynamicSpeed = state.dynamicSpeed === true;
+          if (Array.isArray(state.bookmarks) && state.bookmarks.length === 5) {
+            bookmarks = state.bookmarks.map((v) => (Number.isFinite(v) && v >= 0 && v < words.length) ? Math.floor(v) : null);
+          }
+          currentTitle = "Сохранённый текст";
+          els.book.textContent = currentTitle;
+          return true;
+        } catch (_) { return false; }
+      }
+
+      // ── Детектор внимания: инициализация, камера, цикл ──
+      async function initFaceDetector() {
+        try {
+          const vision = await import("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/vision_bundle.mjs");
+          const { FilesetResolver, FaceDetector } = vision;
+          const filesetResolver = await FilesetResolver.forVisionTasks(
+            "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
+          );
+          faceDetector = await FaceDetector.createFromOptions(filesetResolver, {
+            baseOptions: {
+              modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite",
+              delegate: "GPU"
+            },
+            runningMode: "VIDEO"
+          });
+          return true;
+        } catch (e) {
+          console.error("MediaPipe init failed:", e);
+          showMessage("Для отслеживания взгляда нужен интернет", "error");
+          return false;
+        }
+      }
+
+      async function startCamera() {
+        try {
+          cameraStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: "user" },
+            audio: false
+          });
+          cameraVideo.srcObject = cameraStream;
+          await cameraVideo.play();
+          cameraWidget.hidden = false;
+          lastFaceDetectedTime = Date.now();
+          return true;
+        } catch (e) {
+          console.error("Camera access failed:", e);
+          showMessage("Нет доступа к камере", "error");
+          return false;
+        }
+      }
+
+      function stopCamera() {
+        if (detectionInterval) {
+          clearInterval(detectionInterval);
+          detectionInterval = null;
+        }
+        if (cameraStream) {
+          cameraStream.getTracks().forEach((t) => t.stop());
+          cameraStream = null;
+        }
+        cameraWidget.hidden = true;
+        // Если чтение было остановлено только из-за авто-паузы — возобновляем
+        if (autoPaused) {
+          autoPaused = false;
+          startPlayback();
+        }
+      }
+
+      function startDetectionLoop() {
+        if (detectionInterval) clearInterval(detectionInterval);
+        // 400 мс ≈ 2.5 раза в секунду — бережно к батарее
+        detectionInterval = setInterval(() => {
+          if (!faceDetector || !cameraStream) return;
+          try {
+            const detections = faceDetector.detectForVideo(cameraVideo, performance.now());
+            const hasFace = detections?.detections?.length > 0;
+            if (hasFace) {
+              lastFaceDetectedTime = Date.now();
+              cameraStatusDot.className = "camera-status-dot is-active";
+              if (autoPaused) {
+                autoPaused = false;
+                startPlayback();
+              }
+            } else {
+              cameraStatusDot.className = "camera-status-dot is-lost";
+              // Авто-пауза только если чтение активно и лицо пропало > 2 сек
+              if (playing && !autoPaused && Date.now() - lastFaceDetectedTime > 2000) {
+                autoPaused = true;
+                stopPlayback();
+              }
+            }
+          } catch (e) {
+            console.warn("Face detection error:", e);
+          }
+        }, 400);
+      }
+
+      async function enableFaceTracking() {
+        const okMedia = await initFaceDetector();
+        if (!okMedia) {
+          faceTrackingToggle.checked = false;
+          ui.faceTracking = false;
+          saveUI();
+          return false;
+        }
+        const okCam = await startCamera();
+        if (!okCam) {
+          faceTrackingToggle.checked = false;
+          ui.faceTracking = false;
+          saveUI();
+          return false;
+        }
+        startDetectionLoop();
+        ui.faceTracking = true;
+        saveUI();
+        showMessage("Отслеживание взгляда включено", "success");
+        return true;
+      }
+
+      function disableFaceTracking() {
+        stopCamera();
+        faceTrackingToggle.checked = false;
+        ui.faceTracking = false;
+        saveUI();
+        showMessage("Отслеживание взгляда выключено", "success");
+      }
+
+      faceTrackingToggle.addEventListener("change", async () => {
+        if (faceTrackingToggle.checked) {
+          await enableFaceTracking();
+        } else {
+          disableFaceTracking();
+        }
+      });
+
+      cameraHideBtn.addEventListener("click", () => {
+        cameraWidget.hidden = true;
+      });
+
+      // ── Привязка основных обработчиков ──
+      $("playButton").addEventListener("click", togglePlayback);
+      els.rewind.addEventListener("click", rewindToSentenceStart);
+      els.zen.addEventListener("click", () => setZenMode(!zenMode));
+      els.settings.addEventListener("click", () => toggleSheet());
+      els.sheetClose.addEventListener("click", () => toggleSheet(false));
+      els.overlay.addEventListener("click", () => toggleSheet(false));
+      els.zenExit.addEventListener("click", () => setZenMode(false));
+      document.querySelectorAll("[data-chunk-words]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const selected = Number(button.dataset.chunkWords);
+          if (![1, 2, 3].includes(selected) || selected === chunkWords) return;
+          chunkWords = selected; updateChunkButtons(); render(); saveState();
+          if (playing) { if (timer !== null) window.clearTimeout(timer); timer = window.setTimeout(tick, delayForCurrentChunk()); }
+        });
+      });
+      document.querySelectorAll("[data-theme]").forEach((btn) => btn.addEventListener("click", () => applyTheme(btn.dataset.theme)));
+      document.querySelectorAll("[data-accent]").forEach((btn) => btn.addEventListener("click", () => applyAccent(btn.dataset.accent)));
+      document.querySelectorAll("[data-font]").forEach((btn) => btn.addEventListener("click", () => applyFontFamily(btn.dataset.font)));
+      els.fontSizeSlider.addEventListener("input", () => applyFontSize(els.fontSizeSlider.value));
+      els.bionicToggle.addEventListener("change", () => applyBionic(els.bionicToggle.checked));
+      els.dynamic.addEventListener("change", () => {
+        dynamicSpeed = els.dynamic.checked; updateDynamicUI(); saveState();
+        if (playing) { if (timer !== null) window.clearTimeout(timer); timer = window.setTimeout(tick, delayForCurrentChunk()); }
+      });
+      els.slider.addEventListener("input", () => applyWpm(els.slider.value));
+      const seekToFraction = (fraction) => {
+        if (!words.length) return;
+        const percent = Math.max(0, Math.min(1, fraction));
+        index = Math.min(words.length - 1, Math.floor(percent * words.length));
+        finished = false;
+        if (playing) { if (timer !== null) window.clearTimeout(timer); timer = window.setTimeout(tick, delayForCurrentChunk()); lastTickAt = performance.now(); }
+        render(); persistProgress(true);
+      };
+      els.progressBar.addEventListener("keydown", (e) => {
+        const current = words.length ? index / words.length : 0;
+        if (e.key === "ArrowLeft") { e.preventDefault(); e.stopPropagation(); seekToFraction(current - 0.01); }
+        else if (e.key === "ArrowRight") { e.preventDefault(); e.stopPropagation(); seekToFraction(current + 0.01); }
+        else if (e.key === "PageDown") { e.preventDefault(); e.stopPropagation(); seekToFraction(current - 0.1); }
+        else if (e.key === "PageUp") { e.preventDefault(); e.stopPropagation(); seekToFraction(current + 0.1); }
+        else if (e.key === "Home") { e.preventDefault(); e.stopPropagation(); seekToFraction(0); }
+        else if (e.key === "End") { e.preventDefault(); e.stopPropagation(); seekToFraction(1); }
+      });
+      els.progressBar.addEventListener("click", (e) => {
+        if (!words.length) return;
+        const rect = els.progressBar.getBoundingClientRect();
+        seekToFraction((e.clientX - rect.left) / rect.width);
+      });
+      els.restart.addEventListener("click", resetToStart);
+      $("editButton").addEventListener("click", () => { if (els.editor.classList.contains("is-open")) closeEditor(); else openEditor(); });
+      $("cancelEdit").addEventListener("click", closeEditor);
+      $("applyText").addEventListener("click", () => {
+        const text = normalizeText(els.textarea.value);
+        if (!text) { showMessage("Добавьте несколько слов.", "error"); els.textarea.focus(); return; }
+        const saved = setText(text, "Пользовательский текст");
+        closeEditor();
+        if (saved) showMessage("Новый текст готов к чтению.", "success");
+        else showMessage("Текст применён, но слишком велик для сохранения.", "warning");
+      });
+      $("fileButton").addEventListener("click", () => els.picker.click());
+      els.picker.addEventListener("change", (event) => readFile(event.target.files && event.target.files[0]));
+      $("resetAll").addEventListener("click", () => {
+        if (!window.confirm("Сбросить весь прогресс и настройки? Это действие нельзя отменить.")) return;
+        stopPlayback();
+        disableFaceTracking();
+        try { localStorage.removeItem(STORAGE_KEY); localStorage.removeItem(UI_KEY); } catch (_) {}
+        ui = { theme: "dark", fontSize: 48, fontFamily: "sans", bionic: false, accent: "red", zenHintShown: ui.zenHintShown, faceTracking: false };
+        applyUI();
+        wpm = 320; chunkWords = 1; dynamicSpeed = false; bookmarks = [null, null, null, null, null];
+        wordsRead = 0; readingMs = 0; lastTickAt = 0; lastSavedIndex = -1;
+        updateChunkButtons(); updateDynamicUI();
+        els.slider.value = "320"; els.speedValue.textContent = "320"; els.wpmBadge.textContent = "320 слов/мин";
+        currentTitle = "А. С. Пушкин · «Метель»";
+        setText(DEMO_TEXT, currentTitle, false);
+        closeEditor(); renderBookmarks();
+        showMessage("Исходный текст восстановлен.", "success");
+      });
+      els.onboardingDone.addEventListener("click", hideOnboarding);
+      els.finishedClose.addEventListener("click", hideFinishedScreen);
+      els.finishedRestart.addEventListener("click", () => { hideFinishedScreen(); resetToStart(); startPlayback(); });
+      document.addEventListener("keydown", (event) => {
+        const target = event.target;
+        const editing = els.editor.classList.contains("is-open") || els.sheet.classList.contains("is-open") ||
+          (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)));
+        if (event.key === "Escape") {
+          if (els.finishedOverlay.classList.contains("is-open")) { hideFinishedScreen(); return; }
+          if (els.onboardingOverlay.classList.contains("is-open")) { hideOnboarding(); return; }
+          if (els.sheet.classList.contains("is-open")) { toggleSheet(false); return; }
+          if (zenMode) { setZenMode(false); return; }
+          if (els.editor.classList.contains("is-open")) closeEditor();
+        }
+        if (target === els.progressBar) return;
+        if ((event.code === "Space" || event.key === " ") && !editing) { event.preventDefault(); togglePlayback(); }
+        if ((event.code === "ArrowLeft" || event.key === "ArrowLeft") && !editing) { event.preventDefault(); rewindToSentenceStart(); }
+        if (!editing && /^[1-5]$/.test(event.key)) {
+          const slot = parseInt(event.key, 10) - 1;
+          if (event.altKey || event.metaKey) { event.preventDefault(); jumpToBookmark(slot); }
+          else { event.preventDefault(); saveBookmark(slot); }
+        }
+      });
+      window.addEventListener("pagehide", () => persistProgress(true));
+      document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") persistProgress(true); });
+      let resizeLastWidth = window.innerWidth;
+      let resizeTimer = null;
+      window.addEventListener("resize", () => {
+        if (window.innerWidth === resizeLastWidth) return;
+        resizeLastWidth = window.innerWidth;
+        window.clearTimeout(resizeTimer);
+        resizeTimer = window.setTimeout(render, 150);
+      });
+
+      loadUI();
+      applyUI();
+      const restored = restoreState();
+      if (!restored) { words = tokenize(DEMO_TEXT); index = 0; }
+      updateChunkButtons();
+      updateDynamicUI();
+      els.slider.value = String(wpm);
+      els.speedValue.textContent = String(wpm);
+      els.wpmBadge.textContent = wpm + " слов/мин";
+      renderBookmarks();
+      render();
+      showOnboarding();
+
+      // Восстановление состояния детектора внимания
+      if (ui.faceTracking) {
+        faceTrackingToggle.checked = true;
+        // Не запускаем камеру автоматически при загрузке, чтобы не раздражать.
+        // Пользователь может включить её заново в настройках.
+      }
+    })();
+  </script>
+
+  <script>
+    // PWA: service worker + install prompt
+    (() => {
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('sw.js').catch((e) => console.warn('SW:', e));
+        });
+      }
+
+      const banner = document.getElementById('installBanner');
+      const installBtn = document.getElementById('installButton');
+      let deferred = null;
+
+      window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferred = e;
+        if (banner) banner.hidden = false;
+      });
+
+      if (installBtn) {
+        installBtn.addEventListener('click', async () => {
+          if (!deferred) return;
+          deferred.prompt();
+          try {
+            const { outcome } = await deferred.userChoice;
+            if (outcome === 'accepted' && banner) banner.hidden = true;
+          } catch (_) {}
+          deferred = null;
+        });
+      }
+
+      window.addEventListener('appinstalled', () => {
+        if (banner) banner.hidden = true;
+        deferred = null;
+      });
+
+      // iOS Safari: подсказка «На экран Домой»
+      const ua = navigator.userAgent || '';
+      const isIOS = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
+      const standalone = window.matchMedia('(display-mode: standalone)').matches
+                      || window.navigator.standalone === true;
+      if (isIOS && !standalone) {
+        try {
+          if (!localStorage.getItem('taktIosHintShown')) {
+            setTimeout(() => {
+              const msg = document.getElementById('message');
+              if (msg && !msg.textContent) {
+                msg.textContent = 'Установить: Поделиться → «На экран Домой».';
+                msg.className = 'message success';
+              }
+              localStorage.setItem('taktIosHintShown', '1');
+            }, 5000);
+          }
+        } catch (_) {}
+      }
+    })();
+  </script>
+</body>
+</html>
