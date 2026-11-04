@@ -12,7 +12,7 @@
   <meta name="apple-mobile-web-app-title" content="Такт">
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 40 40%22%3E%3Ccircle cx=%2220%22 cy=%2220%22 r=%2218%22 fill=%22%23101111%22 stroke=%22%23e75248%22 stroke-width=%222%22/%3E%3Cpath d=%22M20 9v22%22 stroke=%22%23e75248%22/%3E%3C/svg%3E">
-  <title>Такт — RSVP-читалка</title>
+  <title>Такт — RSVP-читалка (экспериментально: взгляд)</title>
   <style>
     :root {
       color-scheme: dark;
@@ -392,7 +392,6 @@
       *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
     }
 
-    /* PWA: баннер установки */
     [hidden] { display: none !important; }
     .install-banner {
       margin: 0 0 12px; padding: var(--s-3) var(--s-4);
@@ -408,7 +407,7 @@
       .install-banner .action-button { width: 100%; }
     }
 
-    /* ── Экспериментальный детектор внимания ── */
+    /* ── Экспериментальный детектор взгляда ── */
     .camera-widget {
       position: fixed; bottom: 20px; right: 20px; z-index: 150;
       width: 100px; height: 100px; border-radius: var(--r-m); overflow: hidden;
@@ -427,13 +426,21 @@
     .camera-status-dot.is-active { background: #4caf50; }
     .camera-status-dot.is-lost   { background: #f44336; }
     .camera-hide-btn {
-      position: absolute; bottom: 4px; right: 4px; width: 20px; height: 20px;
+      position: absolute; top: 4px; left: 4px; width: 20px; height: 20px;
       border-radius: 50%; background: rgba(0,0,0,.65); color: #fff; border: none;
       font-size: 14px; line-height: 1; cursor: pointer;
       display: flex; align-items: center; justify-content: center;
       transition: background .2s;
     }
     .camera-hide-btn:hover { background: rgba(0,0,0,.9); }
+    .camera-debug {
+      position: absolute; bottom: 0; left: 0; right: 0;
+      background: rgba(0,0,0,.7); color: #fff;
+      font-size: 9px; padding: 2px 4px; text-align: center;
+      font-family: var(--mono); font-variant-numeric: tabular-nums;
+      line-height: 1.2; pointer-events: none; white-space: nowrap;
+      overflow: hidden;
+    }
     .shell.is-zen .camera-widget { opacity: 0.12; }
     .shell.is-zen .camera-widget:hover { opacity: 0.6; }
   </style>
@@ -548,11 +555,11 @@
     </button>
   </div>
 
-  <!-- Окно камеры (скрыто по умолчанию) -->
   <div class="camera-widget" id="cameraWidget" hidden>
     <video id="cameraVideo" autoplay playsinline muted></video>
     <span class="camera-status-dot" id="cameraStatusDot"></span>
     <button class="camera-hide-btn" id="cameraHideBtn" type="button" aria-label="Скрыть камеру">×</button>
+    <div class="camera-debug" id="cameraDebug">—</div>
   </div>
 
   <div class="sheet-overlay" id="sheetOverlay"></div>
@@ -607,19 +614,16 @@
         <label class="dynamic-toggle"><input type="checkbox" id="bionicToggle" aria-label="Бионическое чтение"><span class="dynamic-switch"></span></label>
       </div>
     </div>
-
-    <!-- Экспериментальный детектор внимания -->
     <div class="sheet-section">
       <div class="sheet-label">Экспериментально</div>
       <div class="sheet-row">
-        <span class="sheet-row-label">Отслеживание взгляда (камера)<small>Пауза, когда лицо не в кадре</small></span>
+        <span class="sheet-row-label">Отслеживание взгляда (камера)<small>Пауза, когда глаза закрыты дольше 2 сек</small></span>
         <label class="dynamic-toggle">
           <input type="checkbox" id="faceTrackingToggle" aria-label="Отслеживание взгляда">
           <span class="dynamic-switch"></span>
         </label>
       </div>
     </div>
-
     <div class="sheet-section">
       <div class="sheet-label">Закладки</div>
       <div class="bookmark-list" id="bookmarkList"></div>
@@ -747,17 +751,21 @@
       const NON_BREAKING_WORDS = new Set(["а","и","но","да","или","либо","ли","в","во","на","над","о","об","обо","по","за","с","со","к","ко","у","от","до","из","изо","под","при","для","без","через","между","перед","после","около","про","как","что","если","чтобы","когда","пока","потому","хотя"]);
       const ABBREVIATIONS = new Set(["г-н","г-жа","г-ца","т.е","т.н","т.к","т.д","т.п","др","проф","акад","рис","прим","стр","ул","пер","д","кв","тов","гр","млн","млрд","тыс","руб","коп","см","мм","км","кг","г","л","м","с","ч","мин","сек","mr","mrs","dr","prof","vs","etc","inc","ltd","corp","jr","sr","st","fig","vol","no","ed","rev","approx","dept","est","govt"]);
 
-      // ── Переменные детектора внимания ──
-      let faceDetector = null;
+      // ── Состояние детектора взгляда ──
+      let faceLandmarker = null;
       let cameraStream = null;
       let detectionInterval = null;
-      let lastFaceDetectedTime = 0;
+      let lastEyesOpenTime = 0;
       let autoPaused = false;
+      let autoPauseResumeIndex = null;
+      const readingHistory = [];
+      const HISTORY_WINDOW_MS = 8000;
       const faceTrackingToggle = $("faceTrackingToggle");
       const cameraWidget = $("cameraWidget");
       const cameraVideo = $("cameraVideo");
       const cameraStatusDot = $("cameraStatusDot");
       const cameraHideBtn = $("cameraHideBtn");
+      const cameraDebug = $("cameraDebug");
 
       function isAbbreviation(word) {
         const clean = word.replace(/[^а-яёa-z.\-]/gi, "").toLowerCase();
@@ -1069,6 +1077,25 @@
         if (pivot < 0) pivot = Math.max(0, Math.floor((characters.length - 1) / 2));
         return characters.slice(0, pivot).join("").length;
       }
+
+      function recordHistory() {
+        const now = performance.now();
+        const last = readingHistory[readingHistory.length - 1];
+        if (!last || last.index !== index) {
+          readingHistory.push({ time: now, index });
+        }
+        while (readingHistory.length && now - readingHistory[0].time > HISTORY_WINDOW_MS) {
+          readingHistory.shift();
+        }
+      }
+      function getIndexAtTime(targetTime) {
+        if (!readingHistory.length) return index;
+        for (let i = readingHistory.length - 1; i >= 0; i--) {
+          if (readingHistory[i].time <= targetTime) return readingHistory[i].index;
+        }
+        return readingHistory[0].index;
+      }
+
       function updateWord() {
         const firstWord = words[index] || "";
         if (!firstWord) {
@@ -1121,9 +1148,12 @@
         els.play.style.cursor = els.play.disabled ? "default" : "pointer";
         els.rewind.disabled = index === 0;
       }
-      function render() { updateWord(); updateProgress(); setReadingStatus(); }
+      function render() { updateWord(); updateProgress(); setReadingStatus(); recordHistory(); }
       function setText(text, title, shouldSave = true) {
         stopPlayback();
+        autoPaused = false;
+        autoPauseResumeIndex = null;
+        readingHistory.length = 0;
         const normalized = normalizeText(text);
         words = tokenize(normalized);
         canPersistCurrentText = normalized.length <= 1000000;
@@ -1194,8 +1224,8 @@
       function stopPlayback() { playing = false; lastTickAt = 0; if (timer !== null) window.clearTimeout(timer); timer = null; persistProgress(true); }
       function togglePlayback() {
         if (autoPaused) {
-          // Пользователь вручную вмешался — авто-пауза отменяется
           autoPaused = false;
+          autoPauseResumeIndex = null;
         }
         if (playing) { stopPlayback(); render(); } else startPlayback();
       }
@@ -1222,7 +1252,9 @@
         render(); saveState();
       }
       function resetToStart() {
-        stopPlayback(); index = 0; finished = false; wordsRead = 0; readingMs = 0; lastTickAt = 0; render(); persistProgress(true);
+        stopPlayback(); index = 0; finished = false; wordsRead = 0; readingMs = 0; lastTickAt = 0;
+        autoPaused = false; autoPauseResumeIndex = null; readingHistory.length = 0;
+        render(); persistProgress(true);
         showMessage("Чтение начинается с первого слова.", "success");
       }
       function openEditor() { stopPlayback(); els.textarea.value = words.join(" "); els.editor.classList.add("is-open"); els.textarea.focus(); render(); }
@@ -1350,20 +1382,42 @@
         } catch (_) { return false; }
       }
 
-      // ── Детектор внимания: инициализация, камера, цикл ──
+      // ── Детектор взгляда: blendshapes (primary) + EAR (fallback) ──
+      function computeEAR(landmarks) {
+        if (!landmarks || landmarks.length < 468) return { left: 1, right: 1, avg: 1 };
+        const dist = (a, b) => {
+          const ax = Array.isArray(a) ? a[0] : a.x;
+          const ay = Array.isArray(a) ? a[1] : a.y;
+          const bx = Array.isArray(b) ? b[0] : b.x;
+          const by = Array.isArray(b) ? b[1] : b.y;
+          return Math.sqrt((ax - bx) ** 2 + (ay - by) ** 2);
+        };
+        const lv1 = dist(landmarks[160], landmarks[144]);
+        const lv2 = dist(landmarks[158], landmarks[153]);
+        const lh  = dist(landmarks[33], landmarks[133]);
+        const leftEAR = lh > 0 ? (lv1 + lv2) / (2 * lh) : 0;
+        const rv1 = dist(landmarks[385], landmarks[380]);
+        const rv2 = dist(landmarks[387], landmarks[373]);
+        const rh  = dist(landmarks[362], landmarks[263]);
+        const rightEAR = rh > 0 ? (rv1 + rv2) / (2 * rh) : 0;
+        return { left: leftEAR, right: rightEAR, avg: (leftEAR + rightEAR) / 2 };
+      }
+
       async function initFaceDetector() {
         try {
           const vision = await import("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/vision_bundle.mjs");
-          const { FilesetResolver, FaceDetector } = vision;
+          const { FilesetResolver, FaceLandmarker } = vision;
           const filesetResolver = await FilesetResolver.forVisionTasks(
             "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
           );
-          faceDetector = await FaceDetector.createFromOptions(filesetResolver, {
+          faceLandmarker = await FaceLandmarker.createFromOptions(filesetResolver, {
             baseOptions: {
-              modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite",
+              modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
               delegate: "GPU"
             },
-            runningMode: "VIDEO"
+            runningMode: "VIDEO",
+            numFaces: 1,
+            outputFaceBlendshapes: true
           });
           return true;
         } catch (e) {
@@ -1376,13 +1430,13 @@
       async function startCamera() {
         try {
           cameraStream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: "user" },
+            video: { facingMode: "user", width: { ideal: 320 }, height: { ideal: 240 } },
             audio: false
           });
           cameraVideo.srcObject = cameraStream;
           await cameraVideo.play();
           cameraWidget.hidden = false;
-          lastFaceDetectedTime = Date.now();
+          lastEyesOpenTime = performance.now();
           return true;
         } catch (e) {
           console.error("Camera access failed:", e);
@@ -1401,38 +1455,88 @@
           cameraStream = null;
         }
         cameraWidget.hidden = true;
-        // Если чтение было остановлено только из-за авто-паузы — возобновляем
         if (autoPaused) {
           autoPaused = false;
+          autoPauseResumeIndex = null;
           startPlayback();
         }
       }
 
       function startDetectionLoop() {
         if (detectionInterval) clearInterval(detectionInterval);
-        // 400 мс ≈ 2.5 раза в секунду — бережно к батарее
+        let lastLogTime = 0;
+
         detectionInterval = setInterval(() => {
-          if (!faceDetector || !cameraStream) return;
+          if (!faceLandmarker || !cameraStream) return;
           try {
-            const detections = faceDetector.detectForVideo(cameraVideo, performance.now());
-            const hasFace = detections?.detections?.length > 0;
-            if (hasFace) {
-              lastFaceDetectedTime = Date.now();
+            const result = faceLandmarker.detectForVideo(cameraVideo, performance.now());
+            const hasFace = result && result.faceLandmarks && result.faceLandmarks.length > 0;
+            const now = performance.now();
+
+            if (!hasFace) {
+              lastEyesOpenTime = now;
+              cameraStatusDot.className = "camera-status-dot";
+              if (cameraDebug) cameraDebug.textContent = "нет лица";
+              return;
+            }
+
+            // ── Blendshapes (primary) ──
+            let blinkLeft = 0, blinkRight = 0;
+            let hasBlendshapes = false;
+            if (result.faceBlendshapes && result.faceBlendshapes.length > 0 && result.faceBlendshapes[0].categories) {
+              for (const c of result.faceBlendshapes[0].categories) {
+                if (c.categoryName === "eyeBlinkLeft") blinkLeft = c.score;
+                else if (c.categoryName === "eyeBlinkRight") blinkRight = c.score;
+              }
+              if (blinkLeft > 0 || blinkRight > 0) hasBlendshapes = true;
+            }
+            const blinkAvg = (blinkLeft + blinkRight) / 2;
+
+            // ── EAR (fallback) ──
+            const ears = computeEAR(result.faceLandmarks[0]);
+
+            // Порог: blendshape > 0.35 → глаза закрыты; иначе EAR < 0.15
+            const eyesClosed = hasBlendshapes ? blinkAvg > 0.35 : ears.avg < 0.15;
+
+            // Debug-вывод в углу видео
+            if (cameraDebug) {
+              const bs = hasBlendshapes ? blinkAvg.toFixed(2) : "n/a";
+              cameraDebug.textContent = `B:${bs} E:${ears.avg.toFixed(2)} ${eyesClosed ? "🔒" : "👁"}`;
+            }
+
+            // Консольный лог раз в 1.5 сек
+            if (now - lastLogTime > 1500) {
+              console.log(`[EyeTracker] blink=${blinkAvg.toFixed(2)} (L=${blinkLeft.toFixed(2)} R=${blinkRight.toFixed(2)}) EAR=${ears.avg.toFixed(3)} blendshapes=${hasBlendshapes} closed=${eyesClosed} playing=${playing} autoPaused=${autoPaused}`);
+              lastLogTime = now;
+            }
+
+            if (eyesClosed) {
+              cameraStatusDot.className = "camera-status-dot is-lost";
+              if (playing && !autoPaused && (now - lastEyesOpenTime) > 2000) {
+                autoPaused = true;
+                autoPauseResumeIndex = getIndexAtTime(lastEyesOpenTime);
+                stopPlayback();
+                render();
+                showMessage("Глаза закрыты — пауза.", "warning");
+              }
+            } else {
+              lastEyesOpenTime = now;
               cameraStatusDot.className = "camera-status-dot is-active";
               if (autoPaused) {
                 autoPaused = false;
+                if (autoPauseResumeIndex !== null && autoPauseResumeIndex >= 0 && autoPauseResumeIndex < words.length) {
+                  index = autoPauseResumeIndex;
+                  finished = false;
+                  render();
+                  persistProgress(true);
+                }
+                autoPauseResumeIndex = null;
                 startPlayback();
-              }
-            } else {
-              cameraStatusDot.className = "camera-status-dot is-lost";
-              // Авто-пауза только если чтение активно и лицо пропало > 2 сек
-              if (playing && !autoPaused && Date.now() - lastFaceDetectedTime > 2000) {
-                autoPaused = true;
-                stopPlayback();
+                showMessage("Глаза открыты — продолжаем.", "success");
               }
             }
           } catch (e) {
-            console.warn("Face detection error:", e);
+            console.warn("Face landmark detection error:", e);
           }
         }, 400);
       }
@@ -1479,7 +1583,7 @@
         cameraWidget.hidden = true;
       });
 
-      // ── Привязка основных обработчиков ──
+      // ── Основные обработчики ──
       $("playButton").addEventListener("click", togglePlayback);
       els.rewind.addEventListener("click", rewindToSentenceStart);
       els.zen.addEventListener("click", () => setZenMode(!zenMode));
@@ -1603,34 +1707,27 @@
       render();
       showOnboarding();
 
-      // Восстановление состояния детектора внимания
       if (ui.faceTracking) {
         faceTrackingToggle.checked = true;
-        // Не запускаем камеру автоматически при загрузке, чтобы не раздражать.
-        // Пользователь может включить её заново в настройках.
       }
     })();
   </script>
 
   <script>
-    // PWA: service worker + install prompt
     (() => {
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
           navigator.serviceWorker.register('sw.js').catch((e) => console.warn('SW:', e));
         });
       }
-
       const banner = document.getElementById('installBanner');
       const installBtn = document.getElementById('installButton');
       let deferred = null;
-
       window.addEventListener('beforeinstallprompt', (e) => {
         e.preventDefault();
         deferred = e;
         if (banner) banner.hidden = false;
       });
-
       if (installBtn) {
         installBtn.addEventListener('click', async () => {
           if (!deferred) return;
@@ -1642,13 +1739,10 @@
           deferred = null;
         });
       }
-
       window.addEventListener('appinstalled', () => {
         if (banner) banner.hidden = true;
         deferred = null;
       });
-
-      // iOS Safari: подсказка «На экран Домой»
       const ua = navigator.userAgent || '';
       const isIOS = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
       const standalone = window.matchMedia('(display-mode: standalone)').matches
