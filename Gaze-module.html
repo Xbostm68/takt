@@ -1,0 +1,531 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gaze Module — тест взгляда</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0f1112;
+      --panel: #1a1d1e;
+      --line: #2a2f30;
+      --text: #e8e6e1;
+      --muted: #8a918d;
+      --green: #4caf50;
+      --red: #f44336;
+      --amber: #ff9800;
+      --accent: #e75248;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh;
+      background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex; flex-direction: column; align-items: center;
+      padding: 20px;
+    }
+    h1 {
+      font-size: 18px; font-weight: 500; margin: 0 0 6px;
+      letter-spacing: .04em;
+    }
+    .subtitle {
+      font-size: 12px; color: var(--muted); margin-bottom: 18px;
+      text-align: center; max-width: 560px; line-height: 1.5;
+    }
+    .stage {
+      position: relative;
+      width: min(100%, 640px);
+      aspect-ratio: 4 / 3;
+      background: #000;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      box-shadow: 0 8px 30px rgba(0,0,0,.35);
+    }
+    .stage video { display: none; }
+    .stage canvas {
+      width: 100%; height: 100%; display: block;
+    }
+    .hud {
+      position: absolute; inset: 0;
+      pointer-events: none;
+      display: flex; flex-direction: column;
+      justify-content: space-between;
+      padding: 12px;
+    }
+    .hud-top {
+      display: flex; justify-content: space-between; align-items: flex-start;
+      gap: 10px;
+    }
+    .badge {
+      display: inline-flex; align-items: center; gap: 7px;
+      background: rgba(0,0,0,.65);
+      backdrop-filter: blur(4px);
+      border: 1px solid rgba(255,255,255,.1);
+      padding: 7px 11px; border-radius: 999px;
+      font-size: 12px; font-weight: 500; letter-spacing: .02em;
+      white-space: nowrap;
+    }
+    .dot {
+      width: 9px; height: 9px; border-radius: 50%;
+      background: var(--muted);
+      box-shadow: 0 0 0 2px rgba(0,0,0,.4);
+    }
+    .dot.on { background: var(--green); box-shadow: 0 0 10px rgba(76,175,80,.7); }
+    .dot.off { background: var(--red); box-shadow: 0 0 10px rgba(244,67,54,.7); }
+    .dot.warn { background: var(--amber); box-shadow: 0 0 10px rgba(255,152,0,.7); }
+    .debug {
+      font-family: "SF Mono", "JetBrains Mono", Consolas, monospace;
+      font-size: 10px; color: var(--muted);
+      background: rgba(0,0,0,.55);
+      padding: 6px 9px; border-radius: 7px;
+      line-height: 1.5; white-space: pre; text-align: right;
+      border: 1px solid rgba(255,255,255,.06);
+    }
+    .hud-bottom {
+      display: flex; justify-content: center;
+    }
+    .state-line {
+      background: rgba(0,0,0,.7);
+      backdrop-filter: blur(6px);
+      border: 1px solid rgba(255,255,255,.12);
+      border-radius: 10px;
+      padding: 10px 18px;
+      font-size: 15px; font-weight: 600; letter-spacing: .03em;
+      text-align: center;
+    }
+    .state-line.idle { color: var(--muted); }
+    .state-line.center { color: var(--green); }
+    .state-line.away { color: var(--red); }
+    .state-line.closed { color: var(--amber); }
+    .controls {
+      margin-top: 14px; display: flex; gap: 10px; flex-wrap: wrap;
+      justify-content: center;
+    }
+    button {
+      min-height: 40px; padding: 0 16px;
+      border-radius: 8px; border: 1px solid var(--line);
+      background: var(--panel); color: var(--text);
+      cursor: pointer; font-size: 13px;
+      transition: background .18s, border-color .18s;
+    }
+    button:hover { background: #242829; border-color: #3a4041; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    button.primary:hover { background: #d8433a; }
+    button:disabled { opacity: .4; cursor: default; }
+    .message {
+      margin-top: 10px; font-size: 12px; min-height: 18px;
+      color: var(--muted); text-align: center;
+    }
+    .message.error { color: #f08075; }
+    .message.ok { color: var(--green); }
+    .tips {
+      margin-top: 18px; font-size: 11px; color: var(--muted);
+      max-width: 560px; line-height: 1.6; text-align: center;
+    }
+    .tips b { color: var(--text); font-weight: 500; }
+  </style>
+</head>
+<body>
+
+  <h1>Gaze Module</h1>
+  <div class="subtitle">
+    Модуль отслеживания взгляда без читалки. Смотрит на лицо, находит радужку и blendshapes,
+    классифицирует: <b>взгляд на экране</b> / <b>взгляд отведён</b> / <b>глаза закрыты</b> / <b>лицо не найдено</b>.
+  </div>
+
+  <div class="stage" id="stage">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="canvas"></canvas>
+    <div class="hud">
+      <div class="hud-top">
+        <div class="badge"><span class="dot" id="faceDot"></span><span id="faceLabel">нет лица</span></div>
+        <div class="debug" id="debug">—</div>
+      </div>
+      <div class="hud-bottom">
+        <div class="state-line idle" id="stateLine">Ожидание камеры…</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button class="primary" id="startBtn">Включить камеру</button>
+    <button id="calibrateBtn" disabled>Калибровка «взгляд в центр»</button>
+    <button id="stopBtn" disabled>Остановить</button>
+  </div>
+
+  <div class="message" id="message"></div>
+
+  <div class="tips">
+    <b>Как тестировать:</b> включите камеру, смотрите в центр экрана — зелёный индикатор.
+    Отведите взгляд в сторону — красный. Закройте глаза — жёлтый.
+    Если классификация смещена, нажмите «Калибровка», глядя прямо в центр.
+  </div>
+
+  <script type="module">
+    import { FilesetResolver, FaceLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/vision_bundle.mjs";
+
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const stage = document.getElementById("stage");
+    const startBtn = document.getElementById("startBtn");
+    const stopBtn = document.getElementById("stopBtn");
+    const calibrateBtn = document.getElementById("calibrateBtn");
+    const messageEl = document.getElementById("message");
+    const debugEl = document.getElementById("debug");
+    const stateLine = document.getElementById("stateLine");
+    const faceDot = document.getElementById("faceDot");
+    const faceLabel = document.getElementById("faceLabel");
+
+    let faceLandmarker = null;
+    let stream = null;
+    let rafId = null;
+    let running = false;
+    let lastVideoTime = -1;
+
+    // Калибровочные смещения для blendshapes
+    let calibration = {
+      eyeLookInLeft: 0,
+      eyeLookOutLeft: 0,
+      eyeLookUpLeft: 0,
+      eyeLookDownLeft: 0,
+      eyeLookInRight: 0,
+      eyeLookOutRight: 0,
+      eyeLookUpRight: 0,
+      eyeLookDownRight: 0
+    };
+    let calibrated = false;
+
+    function setMessage(text, kind = "") {
+      messageEl.textContent = text;
+      messageEl.className = "message" + (kind ? " " + kind : "");
+    }
+
+    function setState(text, cls) {
+      stateLine.textContent = text;
+      stateLine.className = "state-line " + cls;
+    }
+
+    function setFace(hasFace) {
+      if (!hasFace) {
+        faceDot.className = "dot";
+        faceLabel.textContent = "нет лица";
+        return;
+      }
+      faceDot.className = "dot on";
+      faceLabel.textContent = "лицо";
+    }
+
+    // ── Инициализация MediaPipe ──
+    async function initFaceLandmarker() {
+      const filesetResolver = await FilesetResolver.forVisionTasks(
+        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
+      );
+      faceLandmarker = await FaceLandmarker.createFromOptions(filesetResolver, {
+        baseOptions: {
+          modelAssetPath:
+            "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+          delegate: "GPU"
+        },
+        runningMode: "VIDEO",
+        numFaces: 1,
+        outputFaceBlendshapes: true,
+        outputFacialTransformationMatrixes: false
+      });
+    }
+
+    // ── Камера ──
+    async function startCamera() {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: "user",
+          width: { ideal: 640 },
+          height: { ideal: 480 }
+        },
+        audio: false
+      });
+      video.srcObject = stream;
+      await video.play();
+      // Ждём, пока появится размер
+      await new Promise((resolve) => {
+        if (video.videoWidth > 0) return resolve();
+        video.addEventListener("loadedmetadata", () => resolve(), { once: true });
+      });
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+    }
+
+    function stopCamera() {
+      if (stream) {
+        stream.getTracks().forEach((t) => t.stop());
+        stream = null;
+      }
+      video.srcObject = null;
+    }
+
+    // ── Blendshapes в объект ──
+    function blendshapesToObject(bs) {
+      const obj = {};
+      if (!bs || !bs.categories) return obj;
+      for (const c of bs.categories) {
+        obj[c.categoryName] = c.score;
+      }
+      return obj;
+    }
+
+    // ── Классификация взгляда ──
+    function classifyGaze(bs, landmarks) {
+      const blinkL = bs.eyeBlinkLeft ?? 0;
+      const blinkR = bs.eyeBlinkRight ?? 0;
+      const blinkAvg = (blinkL + blinkR) / 2;
+
+      // Глаза закрыты
+      if (blinkAvg > 0.55) {
+        return { state: "closed", label: "Глаза закрыты", cls: "closed" };
+      }
+
+      // Смещения от калибровки
+      const c = calibrated ? calibration : {
+        eyeLookInLeft: 0, eyeLookOutLeft: 0, eyeLookUpLeft: 0, eyeLookDownLeft: 0,
+        eyeLookInRight: 0, eyeLookOutRight: 0, eyeLookUpRight: 0, eyeLookDownRight: 0
+      };
+
+      const get = (name) => Math.max(0, (bs[name] ?? 0) - (c[name] ?? 0));
+
+      const inL = get("eyeLookInLeft");
+      const outL = get("eyeLookOutLeft");
+      const upL = get("eyeLookUpLeft");
+      const downL = get("eyeLookDownLeft");
+      const inR = get("eyeLookInRight");
+      const outR = get("eyeLookOutRight");
+      const upR = get("eyeLookUpRight");
+      const downR = get("eyeLookDownRight");
+
+      const maxH = Math.max(inL, outL, inR, outR);
+      const maxV = Math.max(upL, downL, upR, downR);
+
+      // Порог: если любое горизонтальное или вертикальное движение > 0.28 — взгляд отведён
+      const THRESHOLD = 0.28;
+      const away = maxH > THRESHOLD || maxV > THRESHOLD;
+
+      let detail = `H:${maxH.toFixed(2)} V:${maxV.toFixed(2)}`;
+
+      // Дополнительно — грубая проверка по радужке (если landmarks есть)
+      let irisInfo = "";
+      if (landmarks && landmarks.length >= 478) {
+        // Правый глаз (на изображении слева): уголки 33, 133; радужка 468
+        // Левый глаз (на изображении справа): уголки 362, 263; радужка 473
+        const rx = (landmarks[33].x + landmarks[133].x) / 2;
+        const lx = (landmarks[362].x + landmarks[263].x) / 2;
+        const hR = landmarks[468].x - landmarks[33].x;
+        const wR = landmarks[133].x - landmarks[33].x;
+        const hL = landmarks[473].x - landmarks[362].x;
+        const wL = landmarks[263].x - landmarks[362].x;
+        const ratioR = wR !== 0 ? hR / wR : 0.5;
+        const ratioL = wL !== 0 ? hL / wL : 0.5;
+        irisInfo = `\nirisR:${ratioR.toFixed(2)} irisL:${ratioL.toFixed(2)}`;
+      }
+
+      debugEl.textContent = `${detail}${irisInfo}\nblink:${blinkAvg.toFixed(2)}`;
+
+      if (away) {
+        return { state: "away", label: "Взгляд отведён", cls: "away" };
+      }
+      return { state: "center", label: "Взгляд на экране", cls: "center" };
+    }
+
+    // ── Отрисовка увеличенного лица ──
+    function drawFace(landmarks) {
+      if (!landmarks || landmarks.length < 468) {
+        ctx.fillStyle = "#000";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        return;
+      }
+
+      // Bounding box лица по ключевым точкам (без радужки)
+      let minX = 1, minY = 1, maxX = 0, maxY = 0;
+      for (let i = 0; i < 468; i++) {
+        const p = landmarks[i];
+        if (p.x < minX) minX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y > maxY) maxY = p.y;
+      }
+
+      // Отступ 20%
+      const padX = (maxX - minX) * 0.2;
+      const padY = (maxY - minY) * 0.2;
+      let sx = (minX - padX) * video.videoWidth;
+      let sy = (minY - padY) * video.videoHeight;
+      let sw = (maxX - minX + 2 * padX) * video.videoWidth;
+      let sh = (maxY - minY + 2 * padY) * video.videoHeight;
+
+      // Ограничиваем границами кадра
+      sx = Math.max(0, Math.min(sx, video.videoWidth - 10));
+      sy = Math.max(0, Math.min(sy, video.videoHeight - 10));
+      sw = Math.min(sw, video.videoWidth - sx);
+      sh = Math.min(sh, video.videoHeight - sy);
+      if (sw < 10 || sh < 10) return;
+
+      // Рисуем увеличенное лицо
+      ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+
+      // Рисуем landmarks радужки (468 и 473) точками
+      const drawPoint = (p, color, radius) => {
+        const px = ((p.x * video.videoWidth - sx) / sw) * canvas.width;
+        const py = ((p.y * video.videoHeight - sy) / sh) * canvas.height;
+        ctx.beginPath();
+        ctx.arc(px, py, radius, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.fill();
+      };
+
+      if (landmarks.length >= 478) {
+        drawPoint(landmarks[468], "#00e5ff", 5); // правая радужка (на изображении слева)
+        drawPoint(landmarks[473], "#ff4081", 5); // левая радужка (на изображении справа)
+      }
+
+      // Рамка вокруг глаз (для наглядности)
+      const drawEyeBox = (indices, color) => {
+        ctx.beginPath();
+        for (let i = 0; i < indices.length; i++) {
+          const p = landmarks[indices[i]];
+          const px = ((p.x * video.videoWidth - sx) / sw) * canvas.width;
+          const py = ((p.y * video.videoHeight - sy) / sh) * canvas.height;
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      };
+      // Контур правого глаза: 33, 133, 160, 144, 158, 153
+      drawEyeBox([33, 133, 160, 144, 158, 153], "rgba(0,229,255,.5)");
+      // Контур левого глаза: 362, 263, 385, 380, 387, 373
+      drawEyeBox([362, 263, 385, 380, 387, 373], "rgba(255,64,129,.5)");
+    }
+
+    // ── Цикл детекции ──
+    function loop() {
+      if (!running || !faceLandmarker) return;
+      if (video.readyState < 2) {
+        rafId = requestAnimationFrame(loop);
+        return;
+      }
+
+      const now = performance.now();
+      if (video.currentTime !== lastVideoTime) {
+        lastVideoTime = video.currentTime;
+        try {
+          const result = faceLandmarker.detectForVideo(video, now);
+          const hasFace = result.faceLandmarks && result.faceLandmarks.length > 0;
+
+          setFace(hasFace);
+
+          if (!hasFace) {
+            drawFace(null);
+            setState("Лицо не найдено", "idle");
+            debugEl.textContent = "—";
+            calibrateBtn.disabled = true;
+          } else {
+            const landmarks = result.faceLandmarks[0];
+            const bs = result.faceBlendshapes && result.faceBlendshapes.length > 0
+              ? blendshapesToObject(result.faceBlendshapes[0])
+              : {};
+
+            drawFace(landmarks);
+
+            const g = classifyGaze(bs, landmarks);
+            setState(g.label, g.cls);
+            calibrateBtn.disabled = false;
+          }
+        } catch (e) {
+          console.warn("detect error:", e);
+          setState("Ошибка детекции", "away");
+        }
+      }
+
+      rafId = requestAnimationFrame(loop);
+    }
+
+    // ── Калибровка ──
+    function calibrate() {
+      if (!faceLandmarker || !running) return;
+      // Делаем один кадр и запоминаем blendshapes как «центр»
+      const result = faceLandmarker.detectForVideo(video, performance.now());
+      if (!result.faceBlendshapes || result.faceBlendshapes.length === 0) {
+        setMessage("Не вижу лицо. Смотрите в камеру и попробуйте снова.", "error");
+        return;
+      }
+      const bs = blendshapesToObject(result.faceBlendshapes[0]);
+      for (const key of Object.keys(calibration)) {
+        calibration[key] = bs[key] ?? 0;
+      }
+      calibrated = true;
+      setMessage("Калибровка сохранена. Центр взгляда обновлён.", "ok");
+    }
+
+    // ── Управление ──
+    async function start() {
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+      setMessage("Загрузка MediaPipe…");
+      try {
+        await initFaceLandmarker();
+      } catch (e) {
+        console.error(e);
+        setMessage("Не удалось загрузить MediaPipe. Нужен интернет.", "error");
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+        return;
+      }
+
+      setMessage("Запрос камеры…");
+      try {
+        await startCamera();
+      } catch (e) {
+        console.error(e);
+        setMessage("Нет доступа к камере.", "error");
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+        return;
+      }
+
+      running = true;
+      calibrateBtn.disabled = false;
+      setMessage("Камера работает. Смотрите в центр экрана.", "ok");
+      setState("Ожидание лица…", "idle");
+      rafId = requestAnimationFrame(loop);
+    }
+
+    function stop() {
+      running = false;
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = null;
+      stopCamera();
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      calibrateBtn.disabled = true;
+      setFace(false);
+      setState("Ожидание камеры…", "idle");
+      debugEl.textContent = "—";
+      ctx.fillStyle = "#000";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      setMessage("Остановлено.");
+    }
+
+    startBtn.addEventListener("click", start);
+    stopBtn.addEventListener("click", stop);
+    calibrateBtn.addEventListener("click", calibrate);
+
+    // Первичная чёрная заливка
+    canvas.width = 640;
+    canvas.height = 480;
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  </script>
+</body>
+</html>
