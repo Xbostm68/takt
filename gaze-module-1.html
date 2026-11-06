@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Такт — отладка детектора взгляда</title>
+<style>
+  :root{
+    --bg:#0b0d10;--text:#e8eaed;--muted:#9aa3ad;--accent:#4f8cff;
+    --green:#3ddc84;--red:#ff5d5d;--yellow:#ffd166;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    display:flex;align-items:center;justify-content:center;padding:24px}
+  main{width:100%;max-width:720px;text-align:center}
+  h1{font-size:18px;margin:0 0 16px}
+  .camera-wrap{position:relative;width:min(100%,640px);aspect-ratio:4/3;
+    margin:0 auto;border-radius:16px;overflow:hidden;background:#000;
+    box-shadow:0 12px 40px rgba(0,0,0,.45);border:1px solid #1e232a}
+  canvas{width:100%;height:100%;display:block}
+  video{display:none}
+  .face-badge{position:absolute;top:10px;left:10px;display:flex;align-items:center;gap:6px;
+    background:rgba(0,0,0,.55);border-radius:999px;padding:5px 10px;font-size:12px}
+  .dot{width:8px;height:8px;border-radius:50%;background:#777}
+  .dot.on{background:var(--green)}
+  .debug{position:absolute;top:10px;right:10px;text-align:right;
+    font-family:ui-monospace,Menlo,Consolas,monospace;font-size:10px;line-height:1.5;
+    color:#dfe4ea;background:rgba(0,0,0,.55);padding:7px 9px;border-radius:8px;white-space:pre}
+  .status{position:absolute;left:0;right:0;bottom:14px;
+    font-size:clamp(16px,4vw,24px);font-weight:750;text-shadow:0 2px 10px rgba(0,0,0,.7)}
+  .status.center{color:var(--green)}
+  .status.away{color:var(--red)}
+  .status.closed{color:var(--yellow)}
+  .status.unknown,.status.idle{color:#b7bdc4}
+  .cal-overlay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;
+    background:rgba(0,0,0,.35)}
+  .cal-overlay.active{display:flex}
+  .cal-target{width:46px;height:46px;border-radius:50%;background:var(--accent);
+    box-shadow:0 0 0 6px rgba(79,140,255,.25);position:absolute;transform:translate(-50%,-50%)}
+  .cal-label{position:absolute;bottom:16px;left:0;right:0;color:#fff;font-weight:650;
+    text-shadow:0 2px 8px rgba(0,0,0,.8)}
+  .controls{display:flex;gap:10px;justify-content:center;margin:16px 0 10px;flex-wrap:wrap}
+  button{border:0;border-radius:10px;padding:10px 16px;font-size:14px;font-weight:600;
+    cursor:pointer;background:#20262e;color:var(--text)}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  button.primary{background:var(--accent);color:#fff}
+  .message{min-height:20px;color:var(--muted);font-size:13px}
+  .hint{margin-top:14px;color:var(--muted);font-size:12px}
+</style>
+</head>
+<body>
+<main>
+  <h1>Отладка детектора взгляда</h1>
+
+  <div class="camera-wrap">
+    <canvas id="canvas" width="640" height="480"></canvas>
+    <video id="video" playsinline muted></video>
+
+    <div class="face-badge">
+      <span id="faceDot" class="dot"></span><span id="faceText">нет лица</span>
+    </div>
+
+    <div class="debug" id="debug">H: —
+V: —
+blink: —
+d: —</div>
+
+    <div class="status idle" id="status">Ожидание камеры…</div>
+
+    <div class="cal-overlay" id="calOverlay">
+      <div class="cal-target" id="calTarget"></div>
+      <div class="cal-label" id="calLabel"></div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button id="startBtn" class="primary">Включить камеру</button>
+    <button id="calibrateBtn" disabled>Калибровка</button>
+    <button id="recalBtn" disabled>Центр</button>
+    <button id="stopBtn" disabled>Остановить</button>
+  </div>
+
+  <div class="message" id="message" role="status"></div>
+
+  <p class="hint">
+    Полная калибровка: центр, лево, право, верх, низ.<br>
+    «Центр» — быстрая перекалибровка центральной точки.
+  </p>
+</main>
+
+<script type="module">
+// ================= Настройки =================
+const BLINK_THRESHOLD = 0.55;    // «Глаза закрыты»
+const CAL_BLINK_REJECT = 0.35;   // отбраковка морганий при калибровке
+const CAL_FRAMES_PER_POINT = 20; // good-кадров на точку
+const CAL_FRAMES_MIN = 10;
+const CAL_TIMEOUT_MS = 4000;     // лимит на одну точку
+const EMA_ALPHA = 0.25;          // сглаживание признаков
+const DWELL_MS = 240;            // сколько состояние должно держаться
+const BLINK_HOLD_MS = 300;       // удержание состояния после моргания
+const UNKNOWN_DIST = 0.28;       // дальше — «неопределённо»
+const BOX_PADDING = 0.20;
+
+const MP_MIN_FACE_DET = 0.5;
+const MP_MIN_TRACKING = 0.5;
+
+const CDN = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest";
+const MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
+const LS_KEY = "takt-gaze-calibration-v2";
+
+// ================= DOM =================
+const $=id=>document.getElementById(id);
+const video=$("video"),canvas=$("canvas"),ctx=canvas.getContext("2d");
+const statusEl=$("status"),debugEl=$("debug"),messageEl=$("message");
+const faceDot=$("faceDot"),faceText=$("faceText");
+const startBtn=$("startBtn"),calibrateBtn=$("calibrateBtn"),recalBtn=$("recalBtn"),stopBtn=$("stopBtn");
+const calOverlay=$("calOverlay"),calTarget=$("calTarget"),calLabel=$("calLabel");
+
+let landmarker=null,stream=null,rafId=null;
+let running=false,lastVideoTime=-1;
+
+// EMA по 4 признакам
+let ema=null;
+// Текущее подтверждённое состояние
+let gazeState="unknown";
+let candidateState="unknown",candidateSince=0;
+let blinkHoldUntil=0;
+
+// Калибровка: 5 опорных точек, каждая — медианный вектор [h,v,irisH,irisV]
+let calibration=null;
+
+const POINTS={
+  center:{x:.5,y:.5,label:"Смотрите в центр",state:"center"},
+  left:{x:.15,y:.5,label:"Смотрите влево",state:"away"},
+  right:{x:.85,y:.5,label:"Смотрите вправо",state:"away"},
+  up:{x:.5,y:.15,label:"Смотрите вверх",state:"away"},
+  down:{x:.5,y:.85,label:"Смотрите вниз",state:"away"}
+};
+
+// ================= Утилиты =================
+function setStatus(t,c){statusEl.textContent=t;statusEl.className="status "+c;}
+function setMessage(t){messageEl.textContent=t||"";}
+function setFace(f){faceDot.classList.toggle("on",f);faceText.textContent=f?"лицо":"нет лица";}
+function shape(cats,n){const c=cats.find(x=>x.categoryName===n);return c?c.score:0;}
+function median(a){const s=[...a].sort((x,y)=>x-y);const m=s.length>>1;
+  return s.length%2?s[m]:(s[m-1]+s[m])/2;}
+function resetFilters(){ema=null;candidateState="unknown";gazeState="unknown";}
+
+function updateEma(f){
+  if(!ema)ema=[...f];
+  else for(let i=0;i<4;i++)ema[i]=EMA_ALPHA*f[i]+(1-EMA_ALPHA)*ema[i];
+  return ema;
+}
+
+// Признаки взгляда: blendshape-каналы + относительное положение радужек
+function features(lm,blend,cal){
+  const adj=n=>Math.max(0,shape(blend,n)-(cal?cal.center?0:0:0));
+  // Знаковые blendshape-каналы: Out минус In, Up минус Down
+  const h=(shape(blend,"eyeLookOutLeft")+shape(blend,"eyeLookOutRight")
+          -shape(blend,"eyeLookInLeft")-shape(blend,"eyeLookInRight"))/2;
+  const v=(shape(blend,"eyeLookUpLeft")+shape(blend,"eyeLookUpRight")
+          -shape(blend,"eyeLookDownLeft")-shape(blend,"eyeLookDownRight"))/2;
+
+  // Радужка относительно центра глаза, нормировано на ширину глаза
+  function irisFeat(a,b,iris){
+    const cx=(lm[a].x+lm[b].x)/2, cy=(lm[a].y+lm[b].y)/2;
+    const w=Math.hypot(lm[b].x-lm[a].x,lm[b].y-lm[a].y)||1e-6;
+    return[(lm[iris].x-cx)/w,(lm[iris].y-cy)/w];
+  }
+  const r=irisFeat(33,133,468), l=irisFeat(362,263,473);
+  const irisH=(r[0]+l[0])/2, irisV=(r[1]+l[1])/2;
+
+  return[h,v,irisH,irisV];
+}
+
+function dist(a,b){let s=0;for(let i=0;i<4;i++)s+=(a[i]-b[i])**2;return Math.sqrt(s);}
+
+function classify(f){
+  if(!calibration)return{state:"unknown",d:null};
+  let best=null,bestD=Infinity;
+  for(const[name,p]of Object.entries(calibration)){
+    const d=dist(f,p.vector);
+    if(d<bestD){bestD=d;best={name,state:p.state};}
+  }
+  if(bestD>UNKNOWN_DIST)return{state:"unknown",d:bestD};
+  return{state:best.state,d:bestD};
+}
+
+// ================= Отрисовка =================
+function drawEye(pts,idx,color){
+  ctx.beginPath();
+  idx.forEach((i,n)=>{const p=pts[i];n?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y);});
+  ctx.strokeStyle=color;ctx.lineWidth=1.2;ctx.stroke();
+}
+
+function drawFrame(lm){
+  ctx.fillStyle="#000";ctx.fillRect(0,0,canvas.width,canvas.height);
+  let minX=1,minY=1,maxX=0,maxY=0;
+  for(const p of lm){
+    minX=Math.min(minX,p.x);minY=Math.min(minY,p.y);
+    maxX=Math.max(maxX,p.x);maxY=Math.max(maxY,p.y);
+  }
+  const px=(maxX-minX)*BOX_PADDING,py=(maxY-minY)*BOX_PADDING;
+  const sx=Math.max(0,minX-px),sy=Math.max(0,minY-py);
+  const sw=Math.min(1,maxX+px)-sx,sh=Math.min(1,maxY+py)-sy;
+  const tar=canvas.width/canvas.height,src=sw/sh;
+  let dw=canvas.width,dh=canvas.height,dx=0,dy=0;
+  if(src>tar){dh=canvas.width/src;dy=(canvas.height-dh)/2;}
+  else{dw=canvas.height*src;dx=(canvas.width-dw)/2;}
+  ctx.drawImage(video,sx*video.videoWidth,sy*video.videoHeight,
+    sw*video.videoWidth,sh*video.videoHeight,dx,dy,dw,dh);
+
+  drawEye(lm,[33,133,160,144,158,153],"#5ec8ff");
+  drawEye(lm,[362,263,385,380,387,373],"#ff8ad1");
+  for(const[i,c]of[[468,"#5ec8ff"],[473,"#ff8ad1"]]){
+    ctx.beginPath();ctx.arc(lm[i].x,lm[i].y,2.5,0,Math.PI*2);
+    ctx.fillStyle=c;ctx.fill();
+  }
+}
+
+// ================= Калибровка =================
+async function collectPoint(name){
+  const p=POINTS[name];
+  calTarget.style.left=(p.x*100)+"%";
+  calTarget.style.top=(p.y*100)+"%";
+  calLabel.textContent=p.label+" — не моргайте";
+  calOverlay.classList.add("active");
+
+  const samples=[];const deadline=performance.now()+CAL_TIMEOUT_MS;
+  while(samples.length<CAL_FRAMES_PER_POINT&&performance.now()<deadline){
+    try{
+      const res=landmarker.detectForVideo(video,performance.now());
+      const lm=res.faceLandmarks?.[0];
+      const blend=res.faceBlendshapes?.[0]?.categories;
+      if(lm&&blend){
+        const blink=(shape(blend,"eyeBlinkLeft")+shape(blend,"eyeBlinkRight"))/2;
+        if(blink<=CAL_BLINK_REJECT)samples.push(features(lm,blend,null));
+      }
+    }catch(e){}
+    await new Promise(r=>requestAnimationFrame(r));
+  }
+  calOverlay.classList.remove("active");
+
+  if(samples.length<CAL_FRAMES_MIN)return null;
+
+  // Медиана по каждому из 4 признаков
+  const vector=[0,1,2,3].map(i=>median(samples.map(s=>s[i])));
+  // Оценка стабильности: средний разброс от медианы
+  let spread=0;
+  for(let i=0;i<4;i++){
+    const m=vector[i];
+    spread+=samples.reduce((a,s)=>a+Math.abs(s[i]-m),0)/samples.length;
+  }
+  return{vector,quality:spread/samples.length,frames:samples.length};
+}
+
+async function runCalibration(onlyCenter=false){
+  setMessage("Калибровка…");
+  const names=onlyCenter?["center"]:Object.keys(POINTS);
+  const result=onlyCenter&&calibration?{...calibration}:{};
+
+  for(const name of names){
+    const data=await collectPoint(name);
+    if(!data){
+      setMessage(`Не удалось собрать точку «${POINTS[name].label}». Повторите калибровку.`);
+      return;
+    }
+    result[name]={...data,state:POINTS[name].state};
+  }
+
+  calibration=result;
+  resetFilters();
+  try{localStorage.setItem(LS_KEY,JSON.stringify(calibration));}catch(e){}
+
+  const q=Object.values(calibration).reduce((a,p)=>a+p.quality,0)/Object.keys(calibration).length;
+  setMessage(`Калибровка сохранена. Качество: ${q<0.03?"хорошее":q<0.06?"среднее":"низкое, повторите"}.`);
+}
+
+function loadCalibration(){
+  try{
+    const raw=localStorage.getItem(LS_KEY);
+    if(raw){calibration=JSON.parse(raw);setMessage("Загружена сохранённая калибровка.");}
+  }catch(e){}
+}
+
+// ================= Основной цикл =================
+function loop(){
+  if(!running)return;
+  rafId=requestAnimationFrame(loop);
+  if(video.currentTime===lastVideoTime)return;
+  lastVideoTime=video.currentTime;
+
+  try{
+    const res=landmarker.detectForVideo(video,performance.now());
+    const lm=res.faceLandmarks?.[0];
+    const blend=res.faceBlendshapes?.[0]?.categories;
+
+    if(!lm||!blend){
+      ctx.fillStyle="#000";ctx.fillRect(0,0,canvas.width,canvas.height);
+      setFace(false);resetFilters();
+      setStatus("Лицо не найдено","idle");
+      calibrateBtn.disabled=true;recalBtn.disabled=true;
+      debugEl.textContent="H: —\nV: —\nblink: —\nd: —";
+      return;
+    }
+
+    setFace(true);calibrateBtn.disabled=false;
+    recalBtn.disabled=!calibration;
+    drawFrame(lm);
+
+    const blink=(shape(blend,"eyeBlinkLeft")+shape(blend,"eyeBlinkRight"))/2;
+    const f=features(lm,blend,calibration);
+    const s=updateEma(f);
+    const cls=classify(s);
+
+    let state,text,color;
+
+    if(blink>BLINK_THRESHOLD){
+      // Во время моргания удерживаем прежнее состояние взгляда
+      blinkHoldUntil=performance.now()+BLINK_HOLD_MS;
+      state="closed";text="Глаза закрыты";color="closed";
+    }else{
+      if(performance.now()<blinkHoldUntil){
+        state=gazeState;text=gazeState==="center"?"Взгляд на экране":"Взгляд отведён";
+        color=gazeState==="center"?"center":"away";
+      }else{
+        // Dwell: состояние меняется только после устойчивой фиксации
+        if(cls.state!==candidateState){candidateState=cls.state;candidateSince=performance.now();}
+        if(performance.now()-candidateSince>=DWELL_MS)gazeState=cls.state;
+
+        if(gazeState==="center"){state="center";text="Взгляд на экране";color="center";}
+        else if(gazeState==="away"){state="away";text="Взгляд отведён";color="away";}
+        else{state="unknown";text="Взгляд не определён";color="unknown";}
+      }
+    }
+
+    setStatus(text,color);
+    debugEl.textContent=
+      `H: ${s[0].toFixed(3)}\nV: ${s[1].toFixed(3)}\nblink: ${blink.toFixed(3)}\n`+
+      `d: ${cls.d===null?"—":cls.d.toFixed(3)}`;
+  }catch(e){
+    console.error(e);
+    setMessage("Ошибка детекции: "+e.message);
+  }
+}
+
+// ================= Запуск / остановка =================
+async function start(){
+  setMessage("");
+  try{
+    const vision=await import(CDN+"/vision_bundle.mjs");
+    const fileset=await vision.FilesetResolver.forVisionTasks(CDN+"/wasm");
+    landmarker=await vision.FaceLandmarker.createFromOptions(fileset,{
+      baseOptions:{modelAssetPath:MODEL_URL,delegate:"GPU"},
+      runningMode:"VIDEO",numFaces:1,outputFaceBlendshapes:true,
+      minFaceDetectionConfidence:MP_MIN_FACE_DET,
+      minFacePresenceConfidence:MP_MIN_FACE_DET,
+      minTrackingConfidence:MP_MIN_TRACKING
+    });
+  }catch(e){
+    console.error(e);
+    setMessage("Не удалось загрузить MediaPipe. Нужен интернет.");
+    return;
+  }
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({
+      video:{facingMode:"user",width:{ideal:640},height:{ideal:480}},audio:false});
+  }catch(e){
+    console.error(e);
+    setMessage("Нет доступа к камере.");
+    return;
+  }
+
+  video.srcObject=stream;
+  await video.play();
+  running=true;lastVideoTime=-1;resetFilters();
+  loadCalibration();
+  startBtn.disabled=true;stopBtn.disabled=false;
+  calibrateBtn.disabled=false;recalBtn.disabled=!calibration;
+  setStatus("Ожидание камеры…","idle");
+  loop();
+}
+
+function stop(){
+  running=false;
+  if(rafId)cancelAnimationFrame(rafId);
+  if(stream)stream.getTracks().forEach(t=>t.stop());
+  stream=null;video.srcObject=null;
+  ctx.fillStyle="#000";ctx.fillRect(0,0,canvas.width,canvas.height);
+  setFace(false);resetFilters();
+  setStatus("Ожидание камеры…","idle");
+  calibrateBtn.disabled=true;recalBtn.disabled=true;stopBtn.disabled=true;startBtn.disabled=false;
+  setMessage("");
+}
+
+calibrateBtn.addEventListener("click",()=>runCalibration(false));
+recalBtn.addEventListener("click",()=>runCalibration(true));
+startBtn.addEventListener("click",start);
+stopBtn.addEventListener("click",stop);
+</script>
+</body>
+</html>
