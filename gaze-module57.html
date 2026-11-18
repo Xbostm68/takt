@@ -1,0 +1,1095 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RSVP + улучшенное внимание</title>
+
+  <style>
+    :root {
+      color-scheme: light dark;
+    }
+
+    body {
+      font-family: system-ui, sans-serif;
+      margin: 16px;
+      line-height: 1.35;
+    }
+
+    h1 {
+      font-size: 22px;
+    }
+
+    #word {
+      min-height: 96px;
+      display: grid;
+      place-items: center;
+      font-size: 42px;
+      font-weight: 800;
+      border: 1px solid #8884;
+      border-radius: 12px;
+      margin: 16px 0;
+      text-align: center;
+      padding: 12px;
+    }
+
+    #word.paused {
+      opacity: 0.35;
+    }
+
+    .controls {
+      display: grid;
+      gap: 8px;
+      margin: 12px 0;
+    }
+
+    button {
+      padding: 10px 12px;
+      font-size: 16px;
+    }
+
+    label {
+      display: grid;
+      gap: 6px;
+      margin: 12px 0;
+    }
+
+    input[type="range"] {
+      width: 100%;
+    }
+
+    .privacy,
+    .hint {
+      color: #666;
+      font-size: 14px;
+    }
+
+    .sr-video {
+      position: fixed;
+      width: 1px;
+      height: 1px;
+      opacity: 0.01;
+      pointer-events: none;
+      left: 0;
+      top: 0;
+    }
+  </style>
+</head>
+
+<body>
+  <main>
+    <h1>RSVP + улучшенное внимание</h1>
+
+    <p id="status">Модуль не запущен.</p>
+
+    <p class="privacy">
+      Камера используется только локально для автопаузы.
+      Кадры не сохраняются и не отправляются на сервер.
+    </p>
+
+    <section id="word" aria-live="polite">—</section>
+
+    <div class="controls">
+      <button id="btnCalibrate">Калибровка: смотреть / не смотреть</button>
+      <button id="btnDelete" disabled>Удалить калибровку</button>
+      <button id="btnStart">Старт чтения</button>
+      <button id="btnStop" disabled>Стоп</button>
+    </div>
+
+    <p id="profileStatus" class="hint">Калибровка не выполнена.</p>
+
+    <label>
+      Скорость, слов в минуту: <span id="wpmValue">250</span>
+      <input id="wpm" type="range" min="120" max="500" value="250" />
+    </label>
+
+    <p class="hint">
+      Теперь используется более тяжелая модель лица.
+      Если на слабом телефоне будут лаги, лучше перейти на нативный Android-модуль.
+    </p>
+
+    <video id="camera" class="sr-video" playsinline muted></video>
+  </main>
+
+  <script type="module">
+    const VISION_URL =
+      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3";
+    const WASM_URL =
+      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm";
+    const FACE_LANDMARKER_MODEL_URL =
+      "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
+
+    const PROFILE_KEY = "rsvp-attention-profile-v3";
+
+    const POSITIVE_CALIBRATION_MS = 3000;
+    const NEGATIVE_CALIBRATION_MS = 3000;
+
+    const TICK_MS = 200;
+    const LOOKING_STABLE_MS = 800;
+    const NOT_LOOKING_STABLE_MS = 1000;
+    const RESUME_DELAY_MS = 600;
+
+    const POSITIVE_DISTANCE_MAX = 5.0;
+    const NEGATIVE_MARGIN = 0.92;
+    const NO_PROFILE_MIN_EYE_OPENNESS = 0.06;
+
+    const FEATURES = [
+      "area",
+      "centerX",
+      "centerY",
+      "eyeOpenness",
+      "yaw",
+      "pitch"
+    ];
+
+    const MIN_STD = {
+      area: 0.01,
+      centerX: 0.02,
+      centerY: 0.02,
+      eyeOpenness: 0.02,
+      yaw: 0.02,
+      pitch: 0.02
+    };
+
+    const $ = (id) => document.getElementById(id);
+
+    const statusEl = $("status");
+    const wordEl = $("word");
+    const videoEl = $("camera");
+    const profileStatusEl = $("profileStatus");
+
+    const btnCalibrate = $("btnCalibrate");
+    const btnDelete = $("btnDelete");
+    const btnStart = $("btnStart");
+    const btnStop = $("btnStop");
+
+    const wpmEl = $("wpm");
+    const wpmValue = $("wpmValue");
+
+    function setStatus(text) {
+      statusEl.textContent = text;
+    }
+
+    function dist(a, b) {
+      const dx = a.x - b.x;
+      const dy = a.y - b.y;
+      return Math.hypot(dx, dy);
+    }
+
+    function buildFeatureProfile(samples, minSamples = 8) {
+      if (!Array.isArray(samples) || samples.length < minSamples) {
+        return null;
+      }
+
+      const mean = {};
+      const std = {};
+
+      for (const key of FEATURES) {
+        const values = samples
+          .map((sample) => sample[key])
+          .filter((value) => Number.isFinite(value));
+
+        if (values.length < minSamples) {
+          return null;
+        }
+
+        const m =
+          values.reduce((acc, value) => acc + value, 0) / values.length;
+
+        const variance =
+          values.reduce((acc, value) => {
+            const d = value - m;
+            return acc + d * d;
+          }, 0) / values.length;
+
+        mean[key] = m;
+        std[key] = Math.max(Math.sqrt(variance), MIN_STD[key] ?? 0.02);
+      }
+
+      return {
+        mean,
+        std,
+        count: samples.length
+      };
+    }
+
+    function featureDistance(sample, profile) {
+      let sum = 0;
+
+      for (const key of FEATURES) {
+        const value = sample[key];
+
+        if (!Number.isFinite(value)) {
+          return Infinity;
+        }
+
+        const mean = profile.mean[key];
+        const std = profile.std[key] || 1;
+        const normalized = (value - mean) / std;
+
+        sum += normalized * normalized;
+      }
+
+      return Math.sqrt(sum);
+    }
+
+    /**
+     * Улучшенный модуль внимания.
+     *
+     * Использует FaceLandmarker:
+     * - landmarks лица;
+     * - приблизительная открытость глаз;
+     * - позиция лица;
+     * - приблизительный поворот и наклон головы.
+     */
+    class AttentionTracker extends EventTarget {
+      constructor(video) {
+        super();
+
+        this.video = video;
+
+        this.state = "idle";
+        this.running = false;
+
+        this.landmarker = null;
+        this.stream = null;
+
+        this.profile = this.loadProfile();
+
+        this._timer = null;
+        this._busy = false;
+
+        this._goodSince = null;
+        this._badSince = null;
+
+        this._calibration = null;
+        this._initPromise = null;
+
+        this._onVisibility = () => {
+          if (document.hidden) {
+            this.stop();
+          }
+        };
+      }
+
+      isEnabled() {
+        return this.running;
+      }
+
+      getState() {
+        return this.state;
+      }
+
+      hasProfile() {
+        return Boolean(this.profile?.positive?.profile?.mean);
+      }
+
+      loadProfile() {
+        try {
+          const raw = localStorage.getItem(PROFILE_KEY);
+          if (!raw) return null;
+
+          const parsed = JSON.parse(raw);
+
+          if (
+            parsed?.version !== 3 ||
+            !parsed?.positive?.profile?.mean ||
+            !parsed?.positive?.profile?.std
+          ) {
+            return null;
+          }
+
+          return parsed;
+        } catch {
+          return null;
+        }
+      }
+
+      saveProfile(profile) {
+        try {
+          localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+        } catch {
+          // localStorage может быть недоступен.
+        }
+      }
+
+      clearProfile() {
+        this.profile = null;
+
+        try {
+          localStorage.removeItem(PROFILE_KEY);
+        } catch {
+          // ignore
+        }
+
+        this.dispatchEvent(new Event("profileCleared"));
+      }
+
+      async init() {
+        if (this.landmarker) return;
+
+        if (!this._initPromise) {
+          this._initPromise = (async () => {
+            const visionModule = await import(VISION_URL);
+            const { FaceLandmarker, FilesetResolver } =
+              visionModule.default ?? visionModule;
+
+            const fileset = await FilesetResolver.forVisionTasks(WASM_URL);
+
+            this.landmarker = await FaceLandmarker.createFromOptions(fileset, {
+              baseOptions: {
+                modelAssetPath: FACE_LANDMARKER_MODEL_URL,
+                delegate: "CPU"
+              },
+              runningMode: "VIDEO",
+              numFaces: 1,
+              outputFaceBlendshapes: false,
+              outputFacialTransformationMatrixes: false
+            });
+          })().catch((error) => {
+            this._initPromise = null;
+            throw error;
+          });
+        }
+
+        return this._initPromise;
+      }
+
+      async start() {
+        if (this.running) return;
+
+        if (document.hidden) {
+          throw new Error("Страница скрыта. Камера не запускается.");
+        }
+
+        await this.init();
+
+        if (!navigator.mediaDevices?.getUserMedia) {
+          throw new Error("getUserMedia недоступен в этом браузере.");
+        }
+
+        this.stream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: {
+            facingMode: "user",
+            width: { ideal: 320 },
+            height: { ideal: 240 },
+            frameRate: { ideal: 8, max: 12 }
+          }
+        });
+
+        this.video.srcObject = this.stream;
+
+        await this.video.play();
+
+        await new Promise((resolve) => {
+          if (this.video.readyState >= 2) {
+            resolve();
+          } else {
+            this.video.addEventListener("loadeddata", resolve, { once: true });
+          }
+        });
+
+        this.running = true;
+        this.setState("starting");
+
+        this._timer = setInterval(() => this.tick(), TICK_MS);
+
+        document.addEventListener("visibilitychange", this._onVisibility);
+
+        this.dispatchEvent(new Event("trackingStarted"));
+      }
+
+      stop() {
+        const calibration = this._calibration;
+        this._calibration = null;
+
+        if (calibration?.reject) {
+          calibration.reject(new Error("Отслеживание остановлено."));
+        }
+
+        if (this._timer) {
+          clearInterval(this._timer);
+        }
+
+        this._timer = null;
+        this.running = false;
+
+        this._goodSince = null;
+        this._badSince = null;
+
+        this.stream?.getTracks().forEach((track) => track.stop());
+        this.stream = null;
+
+        this.video.pause();
+        this.video.srcObject = null;
+
+        document.removeEventListener("visibilitychange", this._onVisibility);
+
+        if (this.state !== "idle") {
+          this.setState("idle");
+        }
+
+        this.dispatchEvent(new Event("trackingStopped"));
+      }
+
+      async calibrateGuided(onPhase) {
+        if (!this.running) {
+          await this.start();
+        }
+
+        if (this._calibration) {
+          throw new Error("Калибровка уже выполняется.");
+        }
+
+        onPhase?.("positive");
+        const positiveSamples = await this._collectSamples(
+          POSITIVE_CALIBRATION_MS
+        );
+
+        onPhase?.("negative");
+        const negativeSamples = await this._collectSamples(
+          NEGATIVE_CALIBRATION_MS
+        );
+
+        const profile = this.buildProfile(positiveSamples, negativeSamples);
+
+        this.profile = profile;
+        this.saveProfile(profile);
+
+        this.dispatchEvent(new Event("calibrationDone"));
+
+        return profile;
+      }
+
+      _collectSamples(durationMs) {
+        return new Promise((resolve, reject) => {
+          this._calibration = {
+            startedAt: performance.now(),
+            durationMs,
+            samples: [],
+            resolve,
+            reject
+          };
+        });
+      }
+
+      filterPositiveSamples(samples) {
+        if (!Array.isArray(samples) || samples.length < 8) {
+          return samples;
+        }
+
+        const eyeValues = samples
+          .map((sample) => sample.eyeOpenness)
+          .filter((value) => Number.isFinite(value))
+          .sort((a, b) => a - b);
+
+        if (!eyeValues.length) {
+          return samples;
+        }
+
+        const median = eyeValues[Math.floor(eyeValues.length / 2)];
+
+        const filtered = samples.filter(
+          (sample) =>
+            Number.isFinite(sample.eyeOpenness) &&
+            sample.eyeOpenness >= median * 0.5
+        );
+
+        return filtered.length >= 8 ? filtered : samples;
+      }
+
+      buildProfile(positiveSamples, negativeSamples) {
+        const positiveFaceSamples = (positiveSamples || []).filter(
+          (sample) => sample?.faceDetected
+        );
+
+        const filteredPositiveSamples =
+          this.filterPositiveSamples(positiveFaceSamples);
+
+        const positiveProfile = buildFeatureProfile(filteredPositiveSamples, 8);
+
+        if (!positiveProfile) {
+          throw new Error(
+            "Не удалось собрать калибровку. Посмотрите на экран и повторите."
+          );
+        }
+
+        const negativeFaceSamples = (negativeSamples || []).filter(
+          (sample) => sample?.faceDetected
+        );
+
+        const totalNegativeSamples = negativeSamples?.length || 0;
+
+        const absentRate = totalNegativeSamples
+          ? 1 - negativeFaceSamples.length / totalNegativeSamples
+          : 1;
+
+        let negative = {
+          mode: "absent",
+          absentRate
+        };
+
+        // Если во время фазы "не смотрю" лицо все еще было видно,
+        // сохраняем его признаки как негативный профиль.
+        if (negativeFaceSamples.length >= 5 && absentRate < 0.7) {
+          const negativeProfile = buildFeatureProfile(negativeFaceSamples, 5);
+
+          if (negativeProfile) {
+            negative = {
+              mode: "feature",
+              absentRate,
+              profile: negativeProfile
+            };
+          }
+        }
+
+        return {
+          version: 3,
+          createdAt: new Date().toISOString(),
+          positive: {
+            profile: positiveProfile
+          },
+          negative
+        };
+      }
+
+      setState(next) {
+        const prev = this.state;
+
+        if (prev === next) return;
+
+        this.state = next;
+
+        if (prev !== "looking" && next === "looking") {
+          this.dispatchEvent(new Event("attentionStart"));
+        }
+
+        if (prev === "looking" && next !== "looking") {
+          this.dispatchEvent(new Event("attentionLost"));
+        }
+
+        this.dispatchEvent(
+          new CustomEvent("stateChange", {
+            detail: { prev, next }
+          })
+        );
+      }
+
+      async tick() {
+        if (!this.running || this._busy) return;
+
+        this._busy = true;
+
+        try {
+          const sample = await this.detect();
+          const now = performance.now();
+
+          if (this._calibration) {
+            this.handleCalibration(sample, now);
+          }
+
+          const likelyLooking = this.isLooking(sample);
+
+          if (likelyLooking) {
+            this._badSince = null;
+
+            if (!this._goodSince) {
+              this._goodSince = now;
+            }
+
+            if (
+              this.state !== "looking" &&
+              now - this._goodSince >= LOOKING_STABLE_MS
+            ) {
+              this.setState("looking");
+            }
+          } else {
+            this._goodSince = null;
+
+            if (!this._badSince) {
+              this._badSince = now;
+            }
+
+            const badFor = now - this._badSince;
+
+            if (badFor >= NOT_LOOKING_STABLE_MS) {
+              this.setState(
+                sample?.faceDetected ? "not_looking" : "lost_face"
+              );
+            }
+          }
+        } catch (error) {
+          console.error(error);
+        } finally {
+          this._busy = false;
+        }
+      }
+
+      handleCalibration(sample, now) {
+        const calibration = this._calibration;
+
+        if (!calibration) return;
+
+        calibration.samples.push(sample);
+
+        if (now - calibration.startedAt >= calibration.durationMs) {
+          const samples = calibration.samples;
+          const resolve = calibration.resolve;
+
+          this._calibration = null;
+
+          resolve(samples);
+        }
+      }
+
+      extractFeatures(landmarks) {
+        if (!Array.isArray(landmarks) || landmarks.length < 468) {
+          return null;
+        }
+
+        const p = landmarks;
+
+        const required = [
+          1,   // nose tip
+          33,  // right eye outer
+          133, // right eye inner
+          159, // right eye upper
+          145, // right eye lower
+          263, // left eye outer
+          362, // left eye inner
+          374, // left eye lower
+          386, // left eye upper
+          234, // face right side
+          454, // face left side
+          10,  // forehead
+          152, // chin
+          61,  // mouth left
+          291  // mouth right
+        ];
+
+        for (const index of required) {
+          if (!p[index]) {
+            return null;
+          }
+        }
+
+        // Приблизительная открытость глаз через отношение
+        // вертикального размера глаза к горизонтальному.
+        const rightEyeVertical = dist(p[159], p[145]);
+        const rightEyeHorizontal = dist(p[33], p[133]) || 1e-6;
+
+        const leftEyeVertical = dist(p[386], p[374]);
+        const leftEyeHorizontal = dist(p[362], p[263]) || 1e-6;
+
+        const rightEyeOpenness = rightEyeVertical / rightEyeHorizontal;
+        const leftEyeOpenness = leftEyeVertical / leftEyeHorizontal;
+
+        const eyeOpenness = (rightEyeOpenness + leftEyeOpenness) / 2;
+
+        // Приблизительные поворот и наклон головы.
+        // Это не точный 3D-расчет, но достаточно для сравнения
+        // текущего состояния с калибровкой.
+        const eyeCenter = {
+          x: (p[33].x + p[263].x) / 2,
+          y: (p[33].y + p[263].y) / 2
+        };
+
+        const faceWidth = dist(p[234], p[454]) || 1e-6;
+        const faceHeight = dist(p[10], p[152]) || 1e-6;
+
+        const yaw = (p[1].x - eyeCenter.x) / faceWidth;
+        const pitch = (p[1].y - eyeCenter.y) / faceHeight;
+
+        // Область лица по опорным точкам.
+        const bboxIndices = [10, 152, 234, 454, 33, 263, 61, 291];
+
+        let minX = Infinity;
+        let minY = Infinity;
+        let maxX = -Infinity;
+        let maxY = -Infinity;
+
+        for (const index of bboxIndices) {
+          const point = p[index];
+
+          if (!point) {
+            return null;
+          }
+
+          minX = Math.min(minX, point.x);
+          minY = Math.min(minY, point.y);
+          maxX = Math.max(maxX, point.x);
+          maxY = Math.max(maxY, point.y);
+        }
+
+        const width = maxX - minX;
+        const height = maxY - minY;
+
+        if (!(width > 0) || !(height > 0)) {
+          return null;
+        }
+
+        const area = width * height;
+        const centerX = (minX + maxX) / 2;
+        const centerY = (minY + maxY) / 2;
+
+        if (
+          !Number.isFinite(area) ||
+          !Number.isFinite(centerX) ||
+          !Number.isFinite(centerY) ||
+          !Number.isFinite(eyeOpenness) ||
+          !Number.isFinite(yaw) ||
+          !Number.isFinite(pitch)
+        ) {
+          return null;
+        }
+
+        return {
+          area,
+          centerX,
+          centerY,
+          eyeOpenness,
+          yaw,
+          pitch
+        };
+      }
+
+      async detect() {
+        if (
+          !this.landmarker ||
+          this.video.readyState < 2 ||
+          !this.video.videoWidth
+        ) {
+          return { faceDetected: false };
+        }
+
+        const result = this.landmarker.detectForVideo(
+          this.video,
+          performance.now()
+        );
+
+        const landmarks = result.faceLandmarks?.[0];
+
+        if (!landmarks || !landmarks.length) {
+          return { faceDetected: false };
+        }
+
+        const features = this.extractFeatures(landmarks);
+
+        if (!features) {
+          return { faceDetected: false };
+        }
+
+        return {
+          faceDetected: true,
+          ...features
+        };
+      }
+
+      isLooking(sample) {
+        if (!sample?.faceDetected) {
+          return false;
+        }
+
+        for (const key of FEATURES) {
+          if (!Number.isFinite(sample[key])) {
+            return false;
+          }
+        }
+
+        if (!this.hasProfile()) {
+          return sample.eyeOpenness > NO_PROFILE_MIN_EYE_OPENNESS;
+        }
+
+        const positive = this.profile.positive.profile;
+
+        // Минимальный порог открытости глаз берем из калибровки.
+        // Если во время калибровки глаза были открыты, модуль
+        // адаптируется под конкретного пользователя и освещение.
+        const minEyeOpenness = Math.max(
+          0.02,
+          positive.mean.eyeOpenness - 3 * positive.std.eyeOpenness
+        );
+
+        if (sample.eyeOpenness < minEyeOpenness) {
+          return false;
+        }
+
+        const positiveDistance = featureDistance(sample, positive);
+
+        if (positiveDistance > POSITIVE_DISTANCE_MAX) {
+          return false;
+        }
+
+        const negative = this.profile.negative;
+
+        // Если негативная калибровка была в основном без лица,
+        // то текущее лицо скорее означает, что пользователь вернулся.
+        if (!negative || negative.mode !== "feature") {
+          return true;
+        }
+
+        const negativeDistance = featureDistance(sample, negative.profile);
+
+        // Если текущее состояние ближе к профилю "не смотрю",
+        // считаем, что пользователь отвлекся.
+        if (negativeDistance < positiveDistance * NEGATIVE_MARGIN) {
+          return false;
+        }
+
+        return true;
+      }
+    }
+
+    const tracker = new AttentionTracker(videoEl);
+
+    const words =
+      "Это минимальный тест RSVP читалки с автопаузой когда пользователь не смотрит на экран телефона Калибровка хранится локально и видео не отправляется на сервер".split(
+        /\s+/
+      );
+
+    let wordIndex = 0;
+    let reading = false;
+    let calibrating = false;
+    let trackingFailed = false;
+    let timer = null;
+
+    function intervalMs() {
+      const wpm = Number(wpmEl.value) || 250;
+      return Math.max(40, Math.round(60000 / wpm));
+    }
+
+    function canAdvance() {
+      return !tracker.isEnabled() || tracker.getState() === "looking";
+    }
+
+    function showNextWord() {
+      wordEl.textContent = words[wordIndex % words.length];
+      wordIndex += 1;
+    }
+
+    function schedule() {
+      if (!reading) return;
+
+      if (!canAdvance()) {
+        wordEl.classList.add("paused");
+        setStatus("Пауза: модуль не уверен, что вы смотрите на экран.");
+        timer = setTimeout(schedule, 220);
+        return;
+      }
+
+      wordEl.classList.remove("paused");
+      showNextWord();
+
+      setStatus(
+        tracker.isEnabled()
+          ? "Чтение активно, улучшенное слежение включено."
+          : "Чтение активно, слежение выключено."
+      );
+
+      timer = setTimeout(schedule, intervalMs());
+    }
+
+    function restartScheduler(delayMs = 0) {
+      if (!reading) return;
+
+      clearTimeout(timer);
+      timer = setTimeout(schedule, delayMs);
+    }
+
+    async function startReading() {
+      if (reading) return;
+
+      reading = true;
+      wordIndex = 0;
+
+      updateReadingControls();
+
+      if (tracker.hasProfile() && !tracker.isEnabled() && !trackingFailed) {
+        try {
+          setStatus("Запуск камеры и загрузка модели...");
+          await tracker.start();
+        } catch (error) {
+          console.error(error);
+          trackingFailed = true;
+          setStatus(
+            `Камера недоступна: ${error?.message ?? error}. Чтение без автопаузы.`
+          );
+        }
+      }
+
+      restartScheduler(0);
+    }
+
+    function stopReading() {
+      if (!reading) return;
+
+      reading = false;
+
+      clearTimeout(timer);
+
+      if (tracker.isEnabled()) {
+        tracker.stop();
+      }
+
+      wordEl.textContent = "—";
+      wordEl.classList.remove("paused");
+
+      updateReadingControls();
+
+      setStatus("Чтение остановлено.");
+    }
+
+    function updateReadingControls() {
+      btnStart.disabled = reading;
+      btnStop.disabled = !reading;
+
+      btnCalibrate.disabled =
+        reading || calibrating || !window.isSecureContext;
+
+      btnDelete.disabled =
+        !tracker.hasProfile() || reading || calibrating;
+    }
+
+    function updateProfileStatus() {
+      profileStatusEl.textContent = tracker.hasProfile()
+        ? "Улучшенная калибровка сохранена локально."
+        : "Калибровка не выполнена.";
+
+      btnDelete.disabled =
+        !tracker.hasProfile() || reading || calibrating;
+    }
+
+    tracker.addEventListener("attentionLost", () => {
+      if (reading) {
+        restartScheduler(0);
+      }
+    });
+
+    tracker.addEventListener("attentionStart", () => {
+      if (reading) {
+        restartScheduler(RESUME_DELAY_MS);
+      }
+    });
+
+    tracker.addEventListener("stateChange", (event) => {
+      if (reading || calibrating) return;
+
+      const state = event.detail.next;
+
+      const text = {
+        idle: "Модуль не запущен.",
+        starting: "Инициализация улучшенного слежения...",
+        looking: "Внимание: пользователь смотрит на экран.",
+        not_looking: "Внимание потеряно: пользователь, вероятно, не смотрит.",
+        lost_face: "Лицо не найдено."
+      }[state];
+
+      if (text) {
+        setStatus(text);
+      }
+    });
+
+    tracker.addEventListener("trackingStopped", () => {
+      updateReadingControls();
+
+      if (!reading && !calibrating) {
+        setStatus("Отслеживание остановлено.");
+      }
+    });
+
+    tracker.addEventListener("calibrationDone", () => {
+      updateProfileStatus();
+    });
+
+    tracker.addEventListener("profileCleared", () => {
+      updateProfileStatus();
+    });
+
+    btnCalibrate.addEventListener("click", async () => {
+      if (calibrating) return;
+
+      calibrating = true;
+      trackingFailed = false;
+
+      updateReadingControls();
+
+      try {
+        setStatus("Подготовка камеры и модели...");
+
+        await tracker.calibrateGuided((phase) => {
+          if (phase === "positive") {
+            setStatus(
+              "Фаза 1: смотрите на экран и держите глаза открытыми 3 секунды."
+            );
+          }
+
+          if (phase === "negative") {
+            setStatus(
+              "Фаза 2: отвернитесь или смотрите мимо экрана 3 секунды."
+            );
+          }
+        });
+
+        setStatus("Улучшенная калибровка сохранена локально.");
+
+        if (tracker.isEnabled()) {
+          tracker.stop();
+        }
+      } catch (error) {
+        console.error(error);
+        setStatus(`Ошибка калибровки: ${error?.message ?? error}`);
+
+        if (tracker.isEnabled()) {
+          tracker.stop();
+        }
+      } finally {
+        calibrating = false;
+        updateProfileStatus();
+        updateReadingControls();
+      }
+    });
+
+    btnDelete.addEventListener("click", () => {
+      tracker.clearProfile();
+
+      if (tracker.isEnabled()) {
+        tracker.stop();
+      }
+
+      updateProfileStatus();
+      setStatus("Калибровка удалена.");
+    });
+
+    btnStart.addEventListener("click", () => {
+      startReading().catch((error) => {
+        console.error(error);
+        setStatus(`Ошибка старта чтения: ${error?.message ?? error}`);
+      });
+    });
+
+    btnStop.addEventListener("click", stopReading);
+
+    wpmEl.addEventListener("input", () => {
+      wpmValue.textContent = wpmEl.value;
+
+      if (reading) {
+        restartScheduler(0);
+      }
+    });
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden && reading) {
+        stopReading();
+      }
+    });
+
+    if (!window.isSecureContext) {
+      setStatus("Нужен HTTPS или localhost: браузер не даст доступ к камере.");
+    }
+
+    updateReadingControls();
+    updateProfileStatus();
+  </script>
+</body>
+</html>
